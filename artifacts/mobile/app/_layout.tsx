@@ -36,6 +36,7 @@ function RootLayoutNav() {
       <Stack.Screen name="temps" options={{ title: "Temperature Log" }} />
       <Stack.Screen name="prep" options={{ title: "Prep Hub" }} />
       <Stack.Screen name="notes" options={{ title: "Kitchen Notes" }} />
+      <Stack.Screen name="linecheck" options={{ title: "Line Check" }} />
     </Stack>
   );
 }

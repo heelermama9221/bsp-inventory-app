@@ -116,6 +116,14 @@ const MODES = [
     color: "#3b82f6",
     route: "/notes",
   },
+  {
+    id: "linecheck",
+    title: "Line Check",
+    description: "Station-by-station service readiness check",
+    icon: "✓",
+    color: "#0891b2",
+    route: "/linecheck",
+  },
 ];
 
 export default function DashboardScreen() {
