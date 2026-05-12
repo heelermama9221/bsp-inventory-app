@@ -92,6 +92,14 @@ const MODES = [
     color: "#059669",
     route: "/schedule",
   },
+  {
+    id: "temps",
+    title: "Temperature Log",
+    description: "Equipment temps & safe ranges",
+    icon: "🌡️",
+    color: "#dc2626",
+    route: "/temps",
+  },
 ];
 
 export default function DashboardScreen() {

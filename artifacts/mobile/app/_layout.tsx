@@ -33,6 +33,7 @@ function RootLayoutNav() {
       <Stack.Screen name="notifications" options={{ title: "Reminder Settings" }} />
       <Stack.Screen name="hours" options={{ title: "Kitchen Hours" }} />
       <Stack.Screen name="schedule" options={{ title: "Employee Schedule" }} />
+      <Stack.Screen name="temps" options={{ title: "Temperature Log" }} />
     </Stack>
   );
 }
