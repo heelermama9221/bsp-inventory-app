@@ -68,6 +68,14 @@ const MODES = [
     color: "#0ea5e9",
     route: "/reports",
   },
+  {
+    id: "notifications",
+    title: "Reminders",
+    description: "Daily walkthrough alerts",
+    icon: "🔔",
+    color: "#6366f1",
+    route: "/notifications",
+  },
 ];
 
 export default function DashboardScreen() {
