@@ -71,6 +71,8 @@ export default function PrepScreen() {
   // Ingredient add (inline inside recipe modal)
   const [ingForm, setIngForm] = useState(BLANK_ING);
   const [ingSection, setIngSection] = useState(false);
+  const [ingPickerVisible, setIngPickerVisible] = useState(false);
+  const [ingPickerSearch, setIngPickerSearch] = useState("");
 
   // Detail view
   const [detailRecipe, setDetailRecipe] = useState<Recipe | null>(null);
@@ -488,23 +490,32 @@ export default function PrepScreen() {
 
             {ingSection && (
               <View style={[styles.ingForm, { backgroundColor: colors.card, borderColor: "#16a34a" }]}>
-                <Text style={[styles.label, { color: colors.mutedForeground, marginTop: 0 }]}>INGREDIENT NAME</Text>
-                <TextInput style={[styles.input, { borderColor: colors.border, color: colors.foreground, backgroundColor: colors.background }]} placeholder="Match inventory name exactly for batch calc" placeholderTextColor={colors.mutedForeground} value={ingForm.name} onChangeText={(v) => setIngForm((f) => ({ ...f, name: v }))} autoFocus />
-                {/* Inventory name suggestions */}
-                {ingForm.name.trim().length > 1 && (() => {
-                  const suggestions = inventory.filter((i) => i.name.toLowerCase().includes(ingForm.name.toLowerCase())).slice(0, 4);
-                  if (suggestions.length === 0) return null;
-                  return (
-                    <View style={styles.suggestions}>
-                      {suggestions.map((s) => (
-                        <TouchableOpacity key={s.id} style={[styles.suggestionRow, { borderColor: colors.border }]} onPress={() => setIngForm((f) => ({ ...f, name: s.name, unit: s.unit || f.unit }))}>
-                          <Text style={[styles.suggestionText, { color: "#16a34a" }]}>✓ {s.name}</Text>
-                          <Text style={[styles.suggestionMeta, { color: colors.mutedForeground }]}>{parseFloat(s.currentStock) || 0} {s.unit} on hand</Text>
-                        </TouchableOpacity>
-                      ))}
-                    </View>
-                  );
-                })()}
+                <Text style={[styles.label, { color: colors.mutedForeground, marginTop: 0 }]}>INGREDIENT</Text>
+                <TouchableOpacity
+                  style={[styles.pickerBtn, { borderColor: ingForm.name ? "#16a34a" : colors.border, backgroundColor: colors.background }]}
+                  onPress={() => { setIngPickerSearch(""); setIngPickerVisible(true); }}
+                >
+                  <View style={{ flex: 1 }}>
+                    {ingForm.name ? (
+                      <>
+                        <Text style={[styles.pickerBtnName, { color: colors.foreground }]}>{ingForm.name}</Text>
+                        {(() => {
+                          const inv = inventory.find((i) => i.name.toLowerCase() === ingForm.name.toLowerCase());
+                          return inv ? (
+                            <Text style={[styles.pickerBtnSub, { color: "#16a34a" }]}>
+                              {parseFloat(inv.currentStock) || 0} {inv.unit} on hand
+                            </Text>
+                          ) : null;
+                        })()}
+                      </>
+                    ) : (
+                      <Text style={[styles.pickerBtnPlaceholder, { color: colors.mutedForeground }]}>
+                        {inventory.length > 0 ? "Select from inventory…" : "Type ingredient name…"}
+                      </Text>
+                    )}
+                  </View>
+                  <Text style={[styles.pickerBtnChevron, { color: "#16a34a" }]}>▼</Text>
+                </TouchableOpacity>
                 <View style={styles.twoCol}>
                   <View style={{ flex: 1 }}>
                     <Text style={[styles.label, { color: colors.mutedForeground }]}>QTY PER BATCH</Text>
@@ -531,6 +542,93 @@ export default function PrepScreen() {
                 </View>
               </View>
             )}
+            <View style={{ height: 40 }} />
+          </ScrollView>
+        </SafeAreaView>
+      </Modal>
+
+      {/* ── Ingredient Picker Modal ──────────────────────────────────────── */}
+      <Modal visible={ingPickerVisible} animationType="slide" presentationStyle="pageSheet">
+        <SafeAreaView style={[styles.modalSafe, { backgroundColor: colors.background }]}>
+          <View style={[styles.modalHeader, { borderBottomColor: colors.border }]}>
+            <TouchableOpacity onPress={() => setIngPickerVisible(false)}>
+              <Text style={[styles.cancelBtn, { color: colors.destructive }]}>Cancel</Text>
+            </TouchableOpacity>
+            <Text style={[styles.modalTitle, { color: colors.foreground }]}>Select Ingredient</Text>
+            <View style={{ minWidth: 56 }} />
+          </View>
+
+          <View style={styles.pickerSearchRow}>
+            <TextInput
+              style={[styles.pickerSearchInput, { borderColor: colors.border, color: colors.foreground, backgroundColor: colors.card }]}
+              placeholder="Search inventory…"
+              placeholderTextColor={colors.mutedForeground}
+              value={ingPickerSearch}
+              onChangeText={setIngPickerSearch}
+              autoFocus
+            />
+          </View>
+
+          <ScrollView keyboardShouldPersistTaps="handled">
+            {inventory.length === 0 && (
+              <View style={styles.pickerEmpty}>
+                <Text style={[styles.pickerEmptyText, { color: colors.mutedForeground }]}>
+                  No inventory items yet. Add items in the Inventory module first, or type the name manually below.
+                </Text>
+              </View>
+            )}
+
+            {inventory
+              .filter((inv) =>
+                !ingPickerSearch.trim() ||
+                inv.name.toLowerCase().includes(ingPickerSearch.toLowerCase())
+              )
+              .map((inv) => {
+                const isSelected = ingForm.name.toLowerCase() === inv.name.toLowerCase();
+                const stock = parseFloat(inv.currentStock) || 0;
+                return (
+                  <TouchableOpacity
+                    key={inv.id}
+                    style={[styles.pickerRow, { borderBottomColor: colors.border }, isSelected && { backgroundColor: "#16a34a12" }]}
+                    onPress={() => {
+                      setIngForm((f) => ({ ...f, name: inv.name, unit: inv.unit || f.unit }));
+                      setIngPickerVisible(false);
+                    }}
+                  >
+                    <View style={{ flex: 1 }}>
+                      <Text style={[styles.pickerRowName, { color: colors.foreground }]}>{inv.name}</Text>
+                      <Text style={[styles.pickerRowMeta, { color: colors.mutedForeground }]}>
+                        {inv.category} · {stock} {inv.unit} on hand
+                      </Text>
+                    </View>
+                    {isSelected ? (
+                      <View style={[styles.pickerCheck, { backgroundColor: "#16a34a" }]}>
+                        <Text style={styles.pickerCheckText}>✓</Text>
+                      </View>
+                    ) : (
+                      <Text style={[styles.pickerChevron, { color: colors.mutedForeground }]}>›</Text>
+                    )}
+                  </TouchableOpacity>
+                );
+              })}
+
+            {/* Manual entry option at bottom */}
+            <View style={[styles.pickerManualSection, { borderTopColor: colors.border }]}>
+              <Text style={[styles.pickerManualLabel, { color: colors.mutedForeground }]}>NOT IN INVENTORY? TYPE MANUALLY</Text>
+              <TextInput
+                style={[styles.input, { borderColor: colors.border, color: colors.foreground, backgroundColor: colors.card }]}
+                placeholder="Ingredient name…"
+                placeholderTextColor={colors.mutedForeground}
+                value={ingPickerSearch && !inventory.find((i) => i.name.toLowerCase() === ingPickerSearch.toLowerCase()) ? ingPickerSearch : ingForm.name}
+                onChangeText={(v) => setIngForm((f) => ({ ...f, name: v }))}
+              />
+              <TouchableOpacity
+                style={[styles.pickerManualBtn, { backgroundColor: "#16a34a" }]}
+                onPress={() => setIngPickerVisible(false)}
+              >
+                <Text style={styles.pickerManualBtnText}>Use This Name</Text>
+              </TouchableOpacity>
+            </View>
             <View style={{ height: 40 }} />
           </ScrollView>
         </SafeAreaView>
@@ -696,10 +794,25 @@ const styles = StyleSheet.create({
   ingChipMeta: { fontSize: 12, marginTop: 1 },
   removeBtn: { fontSize: 18, fontWeight: "700" },
   ingForm: { borderRadius: 12, borderWidth: 1.5, padding: 14, gap: 4, marginBottom: 8 },
-  suggestions: { borderRadius: 8, overflow: "hidden", marginBottom: 4 },
-  suggestionRow: { padding: 10, borderTopWidth: 1, flexDirection: "row", justifyContent: "space-between", alignItems: "center" },
-  suggestionText: { fontSize: 14, fontWeight: "600" },
-  suggestionMeta: { fontSize: 12 },
+  pickerBtn: { borderWidth: 1.5, borderRadius: 10, padding: 13, flexDirection: "row", alignItems: "center", gap: 10 },
+  pickerBtnName: { fontSize: 15, fontWeight: "600" },
+  pickerBtnSub: { fontSize: 12, marginTop: 2 },
+  pickerBtnPlaceholder: { fontSize: 15 },
+  pickerBtnChevron: { fontSize: 14, fontWeight: "700" },
+  pickerSearchRow: { padding: 12, paddingBottom: 8 },
+  pickerSearchInput: { borderWidth: 1, borderRadius: 10, padding: 12, fontSize: 15 },
+  pickerEmpty: { padding: 24, alignItems: "center" },
+  pickerEmptyText: { fontSize: 14, textAlign: "center", lineHeight: 20 },
+  pickerRow: { flexDirection: "row", alignItems: "center", paddingHorizontal: 16, paddingVertical: 14, borderBottomWidth: 1, gap: 12 },
+  pickerRowName: { fontSize: 15, fontWeight: "600" },
+  pickerRowMeta: { fontSize: 13, marginTop: 2 },
+  pickerCheck: { width: 28, height: 28, borderRadius: 14, justifyContent: "center", alignItems: "center" },
+  pickerCheckText: { color: "#fff", fontWeight: "700" },
+  pickerChevron: { fontSize: 22, fontWeight: "300" },
+  pickerManualSection: { padding: 16, borderTopWidth: 1, gap: 10, marginTop: 8 },
+  pickerManualLabel: { fontSize: 11, fontWeight: "700", letterSpacing: 0.5 },
+  pickerManualBtn: { borderRadius: 10, padding: 13, alignItems: "center" },
+  pickerManualBtnText: { color: "#fff", fontWeight: "700", fontSize: 15 },
   ingFormActions: { flexDirection: "row", gap: 10, marginTop: 8 },
   ingCancelBtn: { flex: 1, borderRadius: 8, borderWidth: 1, padding: 11, alignItems: "center" },
   ingCancelBtnText: { fontSize: 14, fontWeight: "600" },
