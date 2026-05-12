@@ -54,6 +54,11 @@ type PriceCatalogEntry = {
   unit: string; currentPrice: string; sku: string; notes: string;
 };
 
+type InventoryItem = {
+  id: string; name: string; category: string; currentStock: string;
+  parLevel: string; unit: string; unitsPerCase: string; location: string;
+};
+
 const STATUS_COLOR: Record<Order["status"], string> = {
   Draft: "#6b7280", Submitted: "#f97316", Received: "#10b981",
 };
@@ -67,6 +72,7 @@ export default function OrderingScreen() {
   const colors = useColors();
   const [orders, setOrders, loaded] = useStorage<Order[]>("orders", []);
   const [catalog] = useStorage<PriceCatalogEntry[]>("pricing_items", []);
+  const [inventory] = useStorage<InventoryItem[]>("inventory_items", []);
 
   const [orderModalVisible, setOrderModalVisible] = useState(false);
   const [detailOrder, setDetailOrder] = useState<Order | null>(null);
@@ -78,6 +84,7 @@ export default function OrderingScreen() {
   const [orderForm, setOrderForm] = useState({ distributor: "Performance", notes: "" });
   const [itemForm, setItemForm] = useState(BLANK_ITEM_FORM);
   const [draftItems, setDraftItems] = useState<OrderItem[]>([]);
+  const [shopListExpanded, setShopListExpanded] = useState(true);
 
   if (!loaded) return null;
 
@@ -165,6 +172,50 @@ export default function OrderingScreen() {
     setDraftItems((prev) => prev.filter((i) => i.id !== id));
   }
 
+  // ── Shopping list (below-par items) ───────────────────────────────────────
+
+  const belowPar = inventory.filter((item) => {
+    const cur = parseFloat(item.currentStock) || 0;
+    const par = parseFloat(item.parLevel) || 0;
+    return par > 0 && cur < par;
+  });
+
+  function neededQty(item: InventoryItem): { qty: number; unit: string } {
+    const cur = parseFloat(item.currentStock) || 0;
+    const par = parseFloat(item.parLevel) || 0;
+    const upc = parseFloat(item.unitsPerCase) || 0;
+    const shortfall = par - cur;
+    if (upc > 0) {
+      return { qty: Math.ceil(shortfall / upc), unit: "case" };
+    }
+    return { qty: Math.ceil(shortfall), unit: item.unit || "each" };
+  }
+
+  function generateFromPar() {
+    if (belowPar.length === 0) {
+      Alert.alert("All Stocked", "All items with a par level are currently at or above par.");
+      return;
+    }
+    const generated: OrderItem[] = belowPar.map((invItem) => {
+      const cat = catalog.find((c) => c.item.toLowerCase() === invItem.name.toLowerCase());
+      const { qty, unit } = neededQty(invItem);
+      return {
+        id: `par_${invItem.id}`,
+        item: invItem.name,
+        sku: cat?.sku ?? "",
+        category: invItem.category,
+        quantity: String(qty),
+        unit,
+        distributor: cat?.distributor ?? "",
+        estimatedCost: cat?.currentPrice ?? "",
+        notes: `Par: ${invItem.parLevel} ${invItem.unit} · On hand: ${invItem.currentStock} ${invItem.unit}`,
+      };
+    });
+    setDraftItems(generated);
+    setOrderForm({ distributor: "Performance", notes: "Generated from par list" });
+    setOrderModalVisible(true);
+  }
+
   const filtered = orders.filter((o) =>
     filterCat === "All" || o.items.some((i) => i.category === filterCat)
   );
@@ -195,6 +246,78 @@ export default function OrderingScreen() {
               </View>
             );
           })}
+        </View>
+
+        {/* ── Shopping List ── */}
+        <View style={[styles.shopCard, { backgroundColor: colors.card, borderColor: belowPar.length > 0 ? "#f97316" : colors.border }]}>
+          <TouchableOpacity style={styles.shopCardHeader} onPress={() => setShopListExpanded((v) => !v)}>
+            <View style={{ flex: 1 }}>
+              <Text style={[styles.shopCardTitle, { color: colors.foreground }]}>
+                🛒 Shopping List
+              </Text>
+              <Text style={[styles.shopCardSub, { color: belowPar.length > 0 ? "#f97316" : colors.mutedForeground }]}>
+                {belowPar.length > 0
+                  ? `${belowPar.length} item${belowPar.length !== 1 ? "s" : ""} below par`
+                  : "All items at or above par"}
+              </Text>
+            </View>
+            <Text style={[styles.shopToggle, { color: "#f97316" }]}>
+              {shopListExpanded ? "▲" : "▼"}
+            </Text>
+          </TouchableOpacity>
+
+          {shopListExpanded && (
+            <>
+              {belowPar.length === 0 ? (
+                <View style={styles.shopEmpty}>
+                  <Text style={[styles.shopEmptyText, { color: colors.mutedForeground }]}>
+                    Nothing to order — all stocked items are at or above par.
+                  </Text>
+                </View>
+              ) : (
+                <>
+                  {belowPar.map((item) => {
+                    const cur = parseFloat(item.currentStock) || 0;
+                    const par = parseFloat(item.parLevel) || 0;
+                    const shortfall = par - cur;
+                    const { qty, unit } = neededQty(item);
+                    const isCritical = cur <= par * 0.25;
+                    return (
+                      <View key={item.id} style={[styles.shopRow, { borderTopColor: colors.border }]}>
+                        <View style={{ flex: 1 }}>
+                          <View style={styles.shopRowTop}>
+                            <Text style={[styles.shopItemName, { color: colors.foreground }]}>{item.name}</Text>
+                            {isCritical && (
+                              <View style={[styles.shopCritBadge, { backgroundColor: "#ef444420" }]}>
+                                <Text style={[styles.shopCritText, { color: "#ef4444" }]}>Critical</Text>
+                              </View>
+                            )}
+                          </View>
+                          <Text style={[styles.shopItemMeta, { color: colors.mutedForeground }]}>
+                            {item.location} · on hand: {cur} {item.unit} · par: {par} {item.unit}
+                          </Text>
+                          <Text style={[styles.shopShortfall, { color: "#f97316" }]}>
+                            Short {shortfall.toFixed(1)} {item.unit}
+                          </Text>
+                        </View>
+                        <View style={[styles.shopQtyBox, { backgroundColor: "#f9731615", borderColor: "#f97316" }]}>
+                          <Text style={[styles.shopQtyNum, { color: "#f97316" }]}>{qty}</Text>
+                          <Text style={[styles.shopQtyUnit, { color: "#f97316" }]}>{unit}</Text>
+                        </View>
+                      </View>
+                    );
+                  })}
+
+                  <TouchableOpacity
+                    style={[styles.shopGenBtn, { backgroundColor: "#f97316" }]}
+                    onPress={generateFromPar}
+                  >
+                    <Text style={styles.shopGenBtnText}>Generate Order Draft →</Text>
+                  </TouchableOpacity>
+                </>
+              )}
+            </>
+          )}
         </View>
 
         {/* Catalog summary */}
@@ -575,6 +698,25 @@ const styles = StyleSheet.create({
   content: { padding: 16, gap: 12 },
   noticeBanner: { borderRadius: 8, borderWidth: 1, padding: 10 },
   noticeText: { fontSize: 13, lineHeight: 18 },
+  shopCard: { borderRadius: 12, borderWidth: 1.5, overflow: "hidden" },
+  shopCardHeader: { flexDirection: "row", alignItems: "center", padding: 14, gap: 10 },
+  shopCardTitle: { fontSize: 16, fontWeight: "700" },
+  shopCardSub: { fontSize: 13, marginTop: 2 },
+  shopToggle: { fontSize: 16, fontWeight: "700" },
+  shopEmpty: { padding: 14, paddingTop: 0 },
+  shopEmptyText: { fontSize: 14, textAlign: "center", paddingVertical: 8 },
+  shopRow: { flexDirection: "row", alignItems: "center", paddingHorizontal: 14, paddingVertical: 12, borderTopWidth: 1, gap: 12 },
+  shopRowTop: { flexDirection: "row", alignItems: "center", gap: 8, flexWrap: "wrap" },
+  shopItemName: { fontSize: 14, fontWeight: "600" },
+  shopCritBadge: { borderRadius: 4, paddingHorizontal: 6, paddingVertical: 2 },
+  shopCritText: { fontSize: 11, fontWeight: "700" },
+  shopItemMeta: { fontSize: 12, marginTop: 2 },
+  shopShortfall: { fontSize: 12, fontWeight: "600", marginTop: 2 },
+  shopQtyBox: { borderWidth: 1.5, borderRadius: 8, minWidth: 56, padding: 8, alignItems: "center" },
+  shopQtyNum: { fontSize: 20, fontWeight: "800" },
+  shopQtyUnit: { fontSize: 10, fontWeight: "600" },
+  shopGenBtn: { margin: 14, marginTop: 8, borderRadius: 10, padding: 13, alignItems: "center" },
+  shopGenBtnText: { color: "#fff", fontWeight: "700", fontSize: 15 },
   catalogBanner: { borderRadius: 8, borderWidth: 1, padding: 10 },
   catalogBannerText: { fontSize: 13, lineHeight: 18 },
   statsRow: { flexDirection: "row", gap: 10 },
