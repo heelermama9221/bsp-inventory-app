@@ -1,11 +1,11 @@
 {
   "expo": {
-    "name": "Mobile App",
-    "slug": "mobile",
+    "name": "O'Black Sheep Kitchen",
+    "slug": "oblacksheepkitchen",
     "version": "1.0.0",
     "orientation": "portrait",
     "icon": "./assets/images/icon.png",
-    "scheme": "mobile",
+    "scheme": "oblacksheepkitchen",
     "userInterfaceStyle": "automatic",
     "newArchEnabled": true,
     "splash": {
@@ -14,11 +14,14 @@
       "backgroundColor": "#ffffff"
     },
     "ios": {
-      "supportsTablet": false
+      "supportsTablet": false,
+      "bundleIdentifier": "com.oblacksheepkitchen.app"
     },
-    "android": {},
+    "android": {
+      "package": "com.oblacksheepkitchen.app"
+    },
     "web": {
-      "favicon": "./assets/images/icon.png"
+      "favicon": "./assets/images/favicon.png"
     },
     "plugins": [
       [
