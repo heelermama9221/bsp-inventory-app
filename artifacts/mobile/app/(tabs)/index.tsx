@@ -100,6 +100,14 @@ const MODES = [
     color: "#dc2626",
     route: "/temps",
   },
+  {
+    id: "prep",
+    title: "Prep Hub",
+    description: "Recipe book & batch yield calculator",
+    icon: "👨‍🍳",
+    color: "#16a34a",
+    route: "/prep",
+  },
 ];
 
 export default function DashboardScreen() {
