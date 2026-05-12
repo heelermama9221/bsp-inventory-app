@@ -141,11 +141,17 @@ export default function ReceivingScreen() {
     if (!singleForm.invoiceNum.trim()) { Alert.alert("Required", "Invoice number is required."); return; }
 
     setInventory((prev) =>
-      prev.map((inv) =>
-        inv.id === singleForm.itemId
-          ? { ...inv, currentStock: String((parseFloat(inv.currentStock) || 0) + qty) }
-          : inv
-      )
+      prev.map((inv) => {
+        if (inv.id !== singleForm.itemId) return inv;
+        const updated: InventoryRef = {
+          ...inv,
+          currentStock: String((parseFloat(inv.currentStock) || 0) + qty),
+        };
+        if (singleForm.unitCost && parseFloat(singleForm.unitCost) > 0) {
+          updated.cost = singleForm.unitCost;
+        }
+        return updated;
+      })
     );
 
     const line: ReceiptLine = {
@@ -178,17 +184,27 @@ export default function ReceivingScreen() {
     const validLines = invoiceLines.filter((l) => l.itemId && calcQty(l.casesReceived, l.unitsReceived, l.unitsPerCase) > 0);
     if (validLines.length === 0) { Alert.alert("Required", "Add at least one item with a quantity."); return; }
 
-    const updates: Record<string, number> = {};
+    const qtyUpdates: Record<string, number> = {};
+    const priceUpdates: Record<string, string> = {};
     for (const l of validLines) {
       const qty = calcQty(l.casesReceived, l.unitsReceived, l.unitsPerCase);
-      updates[l.itemId] = (updates[l.itemId] || 0) + qty;
+      qtyUpdates[l.itemId] = (qtyUpdates[l.itemId] || 0) + qty;
+      if (l.unitCost && parseFloat(l.unitCost) > 0) {
+        priceUpdates[l.itemId] = l.unitCost;
+      }
     }
     setInventory((prev) =>
-      prev.map((inv) =>
-        updates[inv.id] !== undefined
-          ? { ...inv, currentStock: String((parseFloat(inv.currentStock) || 0) + updates[inv.id]) }
-          : inv
-      )
+      prev.map((inv) => {
+        if (qtyUpdates[inv.id] === undefined) return inv;
+        const updated: InventoryRef = {
+          ...inv,
+          currentStock: String((parseFloat(inv.currentStock) || 0) + qtyUpdates[inv.id]),
+        };
+        if (priceUpdates[inv.id]) {
+          updated.cost = priceUpdates[inv.id];
+        }
+        return updated;
+      })
     );
 
     const receiptLines: ReceiptLine[] = validLines.map((l) => ({
