@@ -11,6 +11,7 @@ import {
 } from "react-native";
 import { SafeAreaView } from "react-native-safe-area-context";
 import { useColors } from "@/hooks/useColors";
+import { useStorage } from "@/hooks/useStorage";
 
 type PriceEntry = {
   id: string;
@@ -30,7 +31,7 @@ const UNITS = ["case", "each", "lb", "oz", "gallon", "bottle", "keg", "bag"];
 
 export default function PricingScreen() {
   const colors = useColors();
-  const [items, setItems] = useState<PriceEntry[]>([]);
+  const [items, setItems, loaded] = useStorage<PriceEntry[]>("pricing_items", []);
   const [modalVisible, setModalVisible] = useState(false);
   const [editItem, setEditItem] = useState<PriceEntry | null>(null);
   const [search, setSearch] = useState("");
@@ -39,6 +40,8 @@ export default function PricingScreen() {
     item: "", distributor: "", category: "Produce", unit: "case",
     currentPrice: "", sku: "", notes: "",
   });
+
+  if (!loaded) return null;
 
   function resetForm() {
     setForm({ item: "", distributor: "", category: "Produce", unit: "case", currentPrice: "", sku: "", notes: "" });

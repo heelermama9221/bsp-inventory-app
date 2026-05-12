@@ -11,6 +11,7 @@ import {
 } from "react-native";
 import { SafeAreaView } from "react-native-safe-area-context";
 import { useColors } from "@/hooks/useColors";
+import { useStorage } from "@/hooks/useStorage";
 
 /**
  * CRITICAL RULE:
@@ -46,7 +47,7 @@ const SHIFTS = ["Breakfast", "Lunch", "Dinner", "Late Night"];
 
 export default function SalesScreen() {
   const colors = useColors();
-  const [entries, setEntries] = useState<SaleEntry[]>([]);
+  const [entries, setEntries, loaded] = useStorage<SaleEntry[]>("sales_entries", []);
   const [modalVisible, setModalVisible] = useState(false);
   const [filterCat, setFilterCat] = useState("All");
   const [filterShift, setFilterShift] = useState("All");
@@ -58,6 +59,8 @@ export default function SalesScreen() {
     unitPrice: "",
     server: "",
   });
+
+  if (!loaded) return null;
 
   function resetForm() {
     setForm({ shift: "Lunch", category: "Entrees", item: "", quantity: "", unitPrice: "", server: "" });

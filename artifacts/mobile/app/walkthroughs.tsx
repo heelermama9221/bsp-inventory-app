@@ -11,6 +11,7 @@ import {
 } from "react-native";
 import { SafeAreaView } from "react-native-safe-area-context";
 import { useColors } from "@/hooks/useColors";
+import { useStorage } from "@/hooks/useStorage";
 
 type CheckItem = { id: string; label: string; checked: boolean };
 type Walkthrough = {
@@ -44,7 +45,7 @@ function freshChecklist(): CheckItem[] {
 
 export default function WalkthroughsScreen() {
   const colors = useColors();
-  const [walkthroughs, setWalkthroughs] = useState<Walkthrough[]>([]);
+  const [walkthroughs, setWalkthroughs, loaded] = useStorage<Walkthrough[]>("walkthroughs", []);
   const [modalVisible, setModalVisible] = useState(false);
   const [detailId, setDetailId] = useState<string | null>(null);
   const [form, setForm] = useState({
@@ -55,6 +56,8 @@ export default function WalkthroughsScreen() {
   });
 
   const detail = walkthroughs.find((w) => w.id === detailId) ?? null;
+
+  if (!loaded) return null;
 
   function startNew() {
     setForm({ shift: "Morning", conductedBy: "", notes: "", items: freshChecklist() });

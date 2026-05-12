@@ -11,6 +11,7 @@ import {
 } from "react-native";
 import { SafeAreaView } from "react-native-safe-area-context";
 import { useColors } from "@/hooks/useColors";
+import { useStorage } from "@/hooks/useStorage";
 
 /**
  * Ordering includes ALL categories including Bar & Service (alcohol, spirits, wine, beer).
@@ -56,7 +57,7 @@ type Order = {
 
 export default function OrderingScreen() {
   const colors = useColors();
-  const [orders, setOrders] = useState<Order[]>([]);
+  const [orders, setOrders, loaded] = useStorage<Order[]>("orders", []);
   const [orderModalVisible, setOrderModalVisible] = useState(false);
   const [detailOrder, setDetailOrder] = useState<Order | null>(null);
   const [addItemModalVisible, setAddItemModalVisible] = useState(false);
@@ -68,6 +69,8 @@ export default function OrderingScreen() {
     distributor: "", estimatedCost: "", notes: "",
   });
   const [draftItems, setDraftItems] = useState<OrderItem[]>([]);
+
+  if (!loaded) return null;
 
   function resetForms() {
     setOrderForm({ distributor: "US Foods", notes: "" });

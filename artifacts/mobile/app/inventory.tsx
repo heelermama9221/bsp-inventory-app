@@ -11,6 +11,7 @@ import {
 } from "react-native";
 import { SafeAreaView } from "react-native-safe-area-context";
 import { useColors } from "@/hooks/useColors";
+import { useStorage } from "@/hooks/useStorage";
 
 // Bar & Service categories included here for ordering reference.
 // Alcohol sales are excluded from kitchen sales reports (see sales.tsx).
@@ -56,7 +57,7 @@ const STATUS_LABEL = { ok: "OK", low: "Low", critical: "Critical" };
 
 export default function InventoryScreen() {
   const colors = useColors();
-  const [items, setItems] = useState<InventoryItem[]>([]);
+  const [items, setItems, loaded] = useStorage<InventoryItem[]>("inventory_items", []);
   const [modalVisible, setModalVisible] = useState(false);
   const [editItem, setEditItem] = useState<InventoryItem | null>(null);
   const [search, setSearch] = useState("");
@@ -66,6 +67,8 @@ export default function InventoryScreen() {
     name: "", category: "Produce", currentStock: "", parLevel: "",
     unit: "each", location: "Dry Storage", cost: "",
   });
+
+  if (!loaded) return null;
 
   function resetForm() {
     setForm({ name: "", category: "Produce", currentStock: "", parLevel: "", unit: "each", location: "Dry Storage", cost: "" });

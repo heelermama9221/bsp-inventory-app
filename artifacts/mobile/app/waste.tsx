@@ -11,6 +11,7 @@ import {
 } from "react-native";
 import { SafeAreaView } from "react-native-safe-area-context";
 import { useColors } from "@/hooks/useColors";
+import { useStorage } from "@/hooks/useStorage";
 
 type WasteEntry = {
   id: string;
@@ -30,7 +31,7 @@ const UNITS = ["lbs", "oz", "each", "portion", "batch", "case", "gallon"];
 
 export default function WasteScreen() {
   const colors = useColors();
-  const [entries, setEntries] = useState<WasteEntry[]>([]);
+  const [entries, setEntries, loaded] = useStorage<WasteEntry[]>("waste_entries", []);
   const [modalVisible, setModalVisible] = useState(false);
   const [filterCat, setFilterCat] = useState("All");
   const [form, setForm] = useState({
@@ -42,6 +43,8 @@ export default function WasteScreen() {
     reason: "Spoilage",
     recordedBy: "",
   });
+
+  if (!loaded) return null;
 
   function resetForm() {
     setForm({ item: "", category: "Produce", quantity: "", unit: "lbs", costPerUnit: "", reason: "Spoilage", recordedBy: "" });
