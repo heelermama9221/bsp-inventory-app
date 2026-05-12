@@ -10,24 +10,33 @@ import {
   TouchableOpacity,
   View,
 } from "react-native";
+import { useRouter } from "expo-router";
 import { SafeAreaView } from "react-native-safe-area-context";
 import { useColors } from "@/hooks/useColors";
 import {
   type ShiftReminder,
   cancelShiftReminder,
+  getOpenKitchenDays,
   requestNotificationPermission,
   scheduleShiftReminder,
   useReminders,
 } from "@/hooks/useNotifications";
+import { useStorage } from "@/hooks/useStorage";
 
 const HOURS = Array.from({ length: 24 }, (_, i) => i);
 const MINUTES = [0, 15, 30, 45];
+const ALL_DAYS = ["Monday", "Tuesday", "Wednesday", "Thursday", "Friday", "Saturday", "Sunday"];
+const DAY_SHORT: Record<string, string> = {
+  Monday: "Mon", Tuesday: "Tue", Wednesday: "Wed", Thursday: "Thu",
+  Friday: "Fri", Saturday: "Sat", Sunday: "Sun",
+};
+
+type WeekSchedule = Record<string, { open: boolean; slots: unknown[] }>;
 
 function fmt12(hour: number, minute: number): string {
   const suffix = hour < 12 ? "AM" : "PM";
   const h = hour === 0 ? 12 : hour > 12 ? hour - 12 : hour;
-  const m = String(minute).padStart(2, "0");
-  return `${h}:${m} ${suffix}`;
+  return `${h}:${String(minute).padStart(2, "0")} ${suffix}`;
 }
 
 const SHIFT_COLORS: Record<string, string> = {
@@ -39,16 +48,25 @@ const SHIFT_COLORS: Record<string, string> = {
 
 export default function NotificationsScreen() {
   const colors = useColors();
-  const { reminders, setReminders, loaded } = useReminders();
+  const router = useRouter();
+  const { reminders, setReminders, loaded: remindersLoaded } = useReminders();
+  const [kitchenHours, , hoursLoaded] = useStorage<WeekSchedule>("kitchen_hours", {} as WeekSchedule);
   const [permissionGranted, setPermissionGranted] = useState<boolean | null>(null);
   const [editingId, setEditingId] = useState<string | null>(null);
   const [pickerHour, setPickerHour] = useState(8);
   const [pickerMinute, setPickerMinute] = useState(0);
 
-  if (!loaded) return null;
+  if (!remindersLoaded || !hoursLoaded) return null;
 
   const isWeb = Platform.OS === "web";
   const editingReminder = reminders.find((r) => r.id === editingId) ?? null;
+
+  // Derive open days from kitchen hours (fall back to all days if not configured)
+  const openDays = Object.keys(kitchenHours).length > 0
+    ? ALL_DAYS.filter((d) => kitchenHours[d]?.open)
+    : ALL_DAYS;
+  const closedDays = ALL_DAYS.filter((d) => !openDays.includes(d));
+  const hasCustomHours = Object.keys(kitchenHours).length > 0;
 
   async function ensurePermission(): Promise<boolean> {
     if (isWeb) {
@@ -72,19 +90,20 @@ export default function NotificationsScreen() {
       const granted = await ensurePermission();
       if (!granted) return;
 
-      const notifId = await scheduleShiftReminder(reminder);
+      const days = await getOpenKitchenDays();
+      const ids = await scheduleShiftReminder(reminder, days);
       setReminders((prev) =>
         prev.map((r) =>
-          r.id === reminder.id ? { ...r, enabled: true, notificationId: notifId ?? undefined } : r
+          r.id === reminder.id ? { ...r, enabled: true, notificationIds: ids } : r
         )
       );
     } else {
-      if (reminder.notificationId) {
-        await cancelShiftReminder(reminder.notificationId);
+      if (reminder.notificationIds?.length) {
+        await cancelShiftReminder(reminder.notificationIds);
       }
       setReminders((prev) =>
         prev.map((r) =>
-          r.id === reminder.id ? { ...r, enabled: false, notificationId: undefined } : r
+          r.id === reminder.id ? { ...r, enabled: false, notificationIds: [] } : r
         )
       );
     }
@@ -98,20 +117,18 @@ export default function NotificationsScreen() {
 
   async function saveTime() {
     if (!editingReminder) return;
-
     const updated = { ...editingReminder, hour: pickerHour, minute: pickerMinute };
 
     if (editingReminder.enabled) {
-      if (editingReminder.notificationId) {
-        await cancelShiftReminder(editingReminder.notificationId);
+      if (editingReminder.notificationIds?.length) {
+        await cancelShiftReminder(editingReminder.notificationIds);
       }
-      const notifId = await scheduleShiftReminder(updated);
-      updated.notificationId = notifId ?? undefined;
+      const days = await getOpenKitchenDays();
+      const ids = await scheduleShiftReminder(updated, days);
+      updated.notificationIds = ids;
     }
 
-    setReminders((prev) =>
-      prev.map((r) => (r.id === editingReminder.id ? updated : r))
-    );
+    setReminders((prev) => prev.map((r) => (r.id === editingReminder.id ? updated : r)));
     setEditingId(null);
   }
 
@@ -123,10 +140,10 @@ export default function NotificationsScreen() {
         style: "destructive",
         onPress: async () => {
           for (const r of reminders) {
-            if (r.notificationId) await cancelShiftReminder(r.notificationId);
+            if (r.notificationIds?.length) await cancelShiftReminder(r.notificationIds);
           }
           setReminders((prev) =>
-            prev.map((r) => ({ ...r, enabled: false, notificationId: undefined }))
+            prev.map((r) => ({ ...r, enabled: false, notificationIds: [] }))
           );
         },
       },
@@ -143,8 +160,8 @@ export default function NotificationsScreen() {
         <View style={[styles.headerCard, { backgroundColor: "#3b82f620", borderColor: "#3b82f640" }]}>
           <Text style={[styles.headerTitle, { color: "#3b82f6" }]}>Walkthrough Reminders</Text>
           <Text style={[styles.headerBody, { color: colors.mutedForeground }]}>
-            Get a daily notification for each shift when a walkthrough hasn't been logged yet.
-            Enable each shift below and set the time you want to be reminded.
+            Reminders fire only on days the kitchen is open, based on your Kitchen Hours settings.
+            Enable each shift below and set the time you want to be notified.
           </Text>
           {isWeb && (
             <View style={[styles.webNotice, { backgroundColor: "#fef3c720", borderColor: "#f59e0b" }]}>
@@ -152,6 +169,64 @@ export default function NotificationsScreen() {
                 ⚠ Notifications require the Expo Go app on your iOS or Android device.
               </Text>
             </View>
+          )}
+        </View>
+
+        {/* Kitchen hours linkage */}
+        <View style={[styles.hoursCard, { backgroundColor: colors.card, borderColor: colors.border }]}>
+          <View style={styles.hoursCardHeader}>
+            <Text style={[styles.hoursCardTitle, { color: colors.foreground }]}>Kitchen Schedule</Text>
+            <TouchableOpacity onPress={() => router.push("/hours")}>
+              <Text style={[styles.hoursEditLink, { color: "#3b82f6" }]}>Edit Hours →</Text>
+            </TouchableOpacity>
+          </View>
+
+          {hasCustomHours ? (
+            <>
+              <View style={styles.dayGrid}>
+                {ALL_DAYS.map((day) => {
+                  const isOpen = openDays.includes(day);
+                  return (
+                    <View
+                      key={day}
+                      style={[
+                        styles.dayPill,
+                        {
+                          backgroundColor: isOpen ? "#10b98120" : "#ef444415",
+                          borderColor: isOpen ? "#10b981" : "#ef444440",
+                        },
+                      ]}
+                    >
+                      <Text
+                        style={[
+                          styles.dayPillText,
+                          { color: isOpen ? "#10b981" : "#ef4444" },
+                        ]}
+                      >
+                        {DAY_SHORT[day]}
+                      </Text>
+                    </View>
+                  );
+                })}
+              </View>
+              {closedDays.length > 0 && (
+                <Text style={[styles.closedNote, { color: colors.mutedForeground }]}>
+                  No reminders on {closedDays.map((d) => DAY_SHORT[d]).join(", ")} (kitchen closed)
+                </Text>
+              )}
+              {openDays.length === 0 && (
+                <Text style={[styles.closedNote, { color: "#ef4444" }]}>
+                  All days marked closed — reminders won't fire. Update Kitchen Hours to open some days.
+                </Text>
+              )}
+            </>
+          ) : (
+            <Text style={[styles.noHoursNote, { color: colors.mutedForeground }]}>
+              No Kitchen Hours configured yet — reminders will fire every day.{" "}
+              <Text style={{ color: "#3b82f6" }} onPress={() => router.push("/hours")}>
+                Set your hours →
+              </Text>
+            </Text>
           )}
         </View>
 
@@ -166,6 +241,7 @@ export default function NotificationsScreen() {
         {/* Shift reminder cards */}
         {reminders.map((reminder) => {
           const color = SHIFT_COLORS[reminder.shift] ?? "#3b82f6";
+          const activeDayCount = reminder.notificationIds?.length ?? 0;
           return (
             <View
               key={reminder.id}
@@ -198,14 +274,16 @@ export default function NotificationsScreen() {
                   style={[styles.editTimeBtn, { borderColor: color }]}
                   onPress={() => openTimePicker(reminder)}
                 >
-                  <Text style={[styles.editTimeBtnText, { color: color }]}>Change Time</Text>
+                  <Text style={[styles.editTimeBtnText, { color }]}>Change Time</Text>
                 </TouchableOpacity>
               </View>
 
               {reminder.enabled && (
                 <View style={[styles.activePill, { backgroundColor: color + "20" }]}>
                   <Text style={[styles.activePillText, { color }]}>
-                    🔔 Active — fires daily at {fmt12(reminder.hour, reminder.minute)}
+                    🔔 Active — {activeDayCount > 0
+                      ? `fires ${activeDayCount}×/week at ${fmt12(reminder.hour, reminder.minute)}`
+                      : `fires weekly at ${fmt12(reminder.hour, reminder.minute)}`}
                   </Text>
                 </View>
               )}
@@ -227,11 +305,11 @@ export default function NotificationsScreen() {
         <View style={[styles.howCard, { backgroundColor: colors.card, borderColor: colors.border }]}>
           <Text style={[styles.howTitle, { color: colors.foreground }]}>How reminders work</Text>
           {[
-            "Toggle a shift on to activate its daily reminder.",
+            "Reminders only fire on days the kitchen is open (from Kitchen Hours).",
+            "Toggle a shift on to activate its weekly reminders.",
             "Tap Change Time to set exactly when you want to be notified.",
-            "Reminders fire every day at the scheduled time.",
-            "Open the Walkthroughs module to log your inspection.",
-            "Disable any reminder by toggling it off.",
+            "When you update Kitchen Hours, toggle reminders off and on again to re-sync.",
+            "Open Walkthroughs to log your shift inspection.",
           ].map((tip, i) => (
             <View key={i} style={styles.tipRow}>
               <Text style={[styles.tipNum, { color: "#3b82f6" }]}>{i + 1}.</Text>
@@ -304,9 +382,16 @@ export default function NotificationsScreen() {
 
               <View style={[styles.previewCard, { backgroundColor: "#3b82f620", borderColor: "#3b82f640" }]}>
                 <Text style={[styles.previewLabel, { color: "#3b82f6" }]}>
-                  {editingReminder.shift} reminder will fire daily at{" "}
+                  {editingReminder.shift} reminder will fire on{" "}
+                  <Text style={{ fontWeight: "700" }}>{openDays.length} open day{openDays.length !== 1 ? "s" : ""}</Text>
+                  {" "}at{" "}
                   <Text style={{ fontWeight: "700" }}>{fmt12(pickerHour, pickerMinute)}</Text>
                 </Text>
+                {openDays.length > 0 && (
+                  <Text style={[styles.previewDays, { color: "#3b82f6" }]}>
+                    {openDays.map((d) => DAY_SHORT[d]).join(" · ")}
+                  </Text>
+                )}
               </View>
             </ScrollView>
           </SafeAreaView>
@@ -324,6 +409,15 @@ const styles = StyleSheet.create({
   headerBody: { fontSize: 14, lineHeight: 20 },
   webNotice: { borderRadius: 8, borderWidth: 1, padding: 10, marginTop: 6 },
   webNoticeText: { fontSize: 13 },
+  hoursCard: { borderRadius: 12, borderWidth: 1, padding: 16, gap: 10 },
+  hoursCardHeader: { flexDirection: "row", justifyContent: "space-between", alignItems: "center" },
+  hoursCardTitle: { fontSize: 15, fontWeight: "600" },
+  hoursEditLink: { fontSize: 14, fontWeight: "600" },
+  dayGrid: { flexDirection: "row", flexWrap: "wrap", gap: 8 },
+  dayPill: { borderRadius: 8, borderWidth: 1, paddingHorizontal: 10, paddingVertical: 5 },
+  dayPillText: { fontSize: 13, fontWeight: "600" },
+  closedNote: { fontSize: 12, lineHeight: 18 },
+  noHoursNote: { fontSize: 14, lineHeight: 20 },
   statusCard: { borderRadius: 10, borderWidth: 1, padding: 14, flexDirection: "row", justifyContent: "space-between", alignItems: "center" },
   statusLabel: { fontSize: 14 },
   statusValue: { fontSize: 16, fontWeight: "700" },
@@ -359,6 +453,7 @@ const styles = StyleSheet.create({
   minuteRow: { flexDirection: "row", gap: 12 },
   minuteChip: { flex: 1, borderWidth: 1, borderRadius: 8, paddingVertical: 14, alignItems: "center" },
   pickerChipText: { fontSize: 15, fontWeight: "600" },
-  previewCard: { borderRadius: 10, borderWidth: 1, padding: 14, marginTop: 16 },
+  previewCard: { borderRadius: 10, borderWidth: 1, padding: 14, marginTop: 16, gap: 6 },
   previewLabel: { fontSize: 15, lineHeight: 22, textAlign: "center" },
+  previewDays: { fontSize: 13, textAlign: "center", opacity: 0.8 },
 });
