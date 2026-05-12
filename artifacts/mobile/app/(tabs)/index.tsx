@@ -76,6 +76,14 @@ const MODES = [
     color: "#6366f1",
     route: "/notifications",
   },
+  {
+    id: "hours",
+    title: "Kitchen Hours",
+    description: "Per-day schedules & time slots",
+    icon: "🕐",
+    color: "#0891b2",
+    route: "/hours",
+  },
 ];
 
 export default function DashboardScreen() {

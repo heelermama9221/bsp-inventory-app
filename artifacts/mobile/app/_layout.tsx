@@ -31,6 +31,7 @@ function RootLayoutNav() {
       <Stack.Screen name="ordering" options={{ title: "Ordering" }} />
       <Stack.Screen name="reports" options={{ title: "Reports" }} />
       <Stack.Screen name="notifications" options={{ title: "Reminder Settings" }} />
+      <Stack.Screen name="hours" options={{ title: "Kitchen Hours" }} />
     </Stack>
   );
 }
