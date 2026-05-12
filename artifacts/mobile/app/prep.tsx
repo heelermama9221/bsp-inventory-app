@@ -1,6 +1,7 @@
 import React, { useState } from "react";
 import {
   Alert,
+  Image,
   Modal,
   ScrollView,
   StyleSheet,
@@ -9,6 +10,7 @@ import {
   TouchableOpacity,
   View,
 } from "react-native";
+import * as ImagePicker from "expo-image-picker";
 import { SafeAreaView } from "react-native-safe-area-context";
 import { useColors } from "@/hooks/useColors";
 import { useStorage } from "@/hooks/useStorage";
@@ -31,6 +33,8 @@ type Recipe = {
   yieldUnit: string;
   servings: string;
   notes: string;
+  steps: string[];
+  photoUri: string;
   ingredients: RecipeIngredient[];
   isSpecial: boolean;
   specialLabel: string;
@@ -67,7 +71,7 @@ const CAT_COLORS: Record<string, string> = {
   Beverage: "#3b82f6", Prep: "#16a34a", Other: "#6b7280",
 };
 
-const BLANK_RECIPE = { name: "", category: "Prep", yieldQty: "", yieldUnit: "portions", servings: "", notes: "", isSpecial: false, specialLabel: "", outputItem: "" };
+const BLANK_RECIPE = { name: "", category: "Prep", yieldQty: "", yieldUnit: "portions", servings: "", notes: "", steps: [] as string[], photoUri: "", isSpecial: false, specialLabel: "", outputItem: "" };
 const BLANK_ING = { name: "", quantity: "", unit: "oz" };
 
 // ─── Component ────────────────────────────────────────────────────────────────
@@ -151,7 +155,7 @@ export default function PrepScreen() {
 
   function openEdit(r: Recipe) {
     setEditingRecipe(r);
-    setRecipeForm({ name: r.name, category: r.category, yieldQty: r.yieldQty, yieldUnit: r.yieldUnit, servings: r.servings, notes: r.notes, isSpecial: r.isSpecial ?? false, specialLabel: r.specialLabel ?? "", outputItem: r.outputItem ?? "" });
+    setRecipeForm({ name: r.name, category: r.category, yieldQty: r.yieldQty, yieldUnit: r.yieldUnit, servings: r.servings, notes: r.notes, steps: r.steps ?? [], photoUri: r.photoUri ?? "", isSpecial: r.isSpecial ?? false, specialLabel: r.specialLabel ?? "", outputItem: r.outputItem ?? "" });
     setIngredients([...r.ingredients]);
     setIngForm(BLANK_ING);
     setIngSection(false);
@@ -204,6 +208,23 @@ export default function PrepScreen() {
     if (!editIngForm.quantity.trim()) { Alert.alert("Required", "Quantity is required."); return; }
     setIngredients((prev) => prev.map((i) => i.id === editingIngId ? { ...i, quantity: editIngForm.quantity.trim(), unit: editIngForm.unit } : i));
     setEditingIngId(null);
+  }
+
+  async function pickPhoto() {
+    const { status } = await ImagePicker.requestMediaLibraryPermissionsAsync();
+    if (status !== "granted") {
+      Alert.alert("Permission needed", "Please allow photo library access to add recipe photos.");
+      return;
+    }
+    const result = await ImagePicker.launchImageLibraryAsync({
+      mediaTypes: ["images"],
+      allowsEditing: true,
+      aspect: [4, 3],
+      quality: 0.7,
+    });
+    if (!result.canceled && result.assets[0]) {
+      setRecipeForm((f) => ({ ...f, photoUri: result.assets[0].uri }));
+    }
   }
 
   // ── Cost Calculator logic ─────────────────────────────────────────────
@@ -1188,8 +1209,52 @@ export default function PrepScreen() {
             <Text style={[styles.label, { color: colors.mutedForeground }]}>SERVINGS PER BATCH</Text>
             <TextInput style={[styles.input, { borderColor: colors.border, color: colors.foreground, backgroundColor: colors.card }]} placeholder="e.g. 20" placeholderTextColor={colors.mutedForeground} value={recipeForm.servings} onChangeText={(v) => setRecipeForm((f) => ({ ...f, servings: v }))} keyboardType="decimal-pad" />
 
-            <Text style={[styles.label, { color: colors.mutedForeground }]}>NOTES / INSTRUCTIONS</Text>
-            <TextInput style={[styles.input, styles.textarea, { borderColor: colors.border, color: colors.foreground, backgroundColor: colors.card }]} placeholder="Steps, temperatures, tips…" placeholderTextColor={colors.mutedForeground} value={recipeForm.notes} onChangeText={(v) => setRecipeForm((f) => ({ ...f, notes: v }))} multiline numberOfLines={4} textAlignVertical="top" />
+            {/* Photo upload */}
+            <Text style={[styles.label, { color: colors.mutedForeground }]}>PLATING / BUILD PHOTO</Text>
+            {recipeForm.photoUri ? (
+              <View style={styles.photoContainer}>
+                <Image source={{ uri: recipeForm.photoUri }} style={styles.photoPreview} resizeMode="cover" />
+                <TouchableOpacity style={[styles.photoRemoveBtn, { backgroundColor: colors.card, borderColor: colors.border }]} onPress={() => setRecipeForm((f) => ({ ...f, photoUri: "" }))}>
+                  <Text style={[styles.photoRemoveBtnText, { color: colors.destructive }]}>✕ Remove photo</Text>
+                </TouchableOpacity>
+              </View>
+            ) : (
+              <TouchableOpacity style={[styles.photoUploadBtn, { borderColor: colors.border, backgroundColor: colors.card }]} onPress={pickPhoto}>
+                <Text style={{ fontSize: 28 }}>📷</Text>
+                <Text style={[styles.photoUploadText, { color: colors.mutedForeground }]}>Tap to add plating or build photo</Text>
+              </TouchableOpacity>
+            )}
+
+            {/* Step editor */}
+            <View style={styles.ingHeader}>
+              <Text style={[styles.label, { color: colors.mutedForeground, marginTop: 0 }]}>PREP STEPS ({recipeForm.steps.length})</Text>
+              <TouchableOpacity style={[styles.addIngBtn, { backgroundColor: "#3b82f6" }]} onPress={() => setRecipeForm((f) => ({ ...f, steps: [...f.steps, ""] }))}>
+                <Text style={styles.addIngBtnText}>+ Add Step</Text>
+              </TouchableOpacity>
+            </View>
+            {recipeForm.steps.length === 0 && (
+              <View style={[styles.emptyCard, { backgroundColor: colors.card, borderColor: colors.border }]}>
+                <Text style={[styles.emptyText, { color: colors.mutedForeground, textAlign: "center" }]}>No steps yet. Tap + Add Step to build prep instructions.</Text>
+              </View>
+            )}
+            {recipeForm.steps.map((step, idx) => (
+              <View key={idx} style={[styles.stepEditorRow, { backgroundColor: colors.card, borderColor: colors.border }]}>
+                <View style={[styles.stepNumBubble, { backgroundColor: "#3b82f620" }]}>
+                  <Text style={[styles.stepNumText, { color: "#3b82f6" }]}>{idx + 1}</Text>
+                </View>
+                <TextInput
+                  style={[styles.stepEditorInput, { color: colors.foreground }]}
+                  placeholder={`Describe step ${idx + 1}…`}
+                  placeholderTextColor={colors.mutedForeground}
+                  value={step}
+                  onChangeText={(v) => setRecipeForm((f) => ({ ...f, steps: f.steps.map((s, i) => i === idx ? v : s) }))}
+                  multiline
+                />
+                <TouchableOpacity onPress={() => setRecipeForm((f) => ({ ...f, steps: f.steps.filter((_, i) => i !== idx) }))}>
+                  <Text style={[styles.removeBtn, { color: colors.destructive }]}>✕</Text>
+                </TouchableOpacity>
+              </View>
+            ))}
 
             {/* Weekly Special toggle */}
             <Text style={[styles.label, { color: colors.mutedForeground }]}>WEEKLY SPECIAL</Text>
@@ -1567,7 +1632,23 @@ export default function PrepScreen() {
                 ) : null}
               </View>
 
-              {detailRecipe.notes ? (
+              {detailRecipe.photoUri ? (
+                <Image source={{ uri: detailRecipe.photoUri }} style={styles.detailPhoto} resizeMode="cover" />
+              ) : null}
+
+              {detailRecipe.steps && detailRecipe.steps.length > 0 ? (
+                <>
+                  <Text style={[styles.label, { color: colors.mutedForeground }]}>PREP STEPS</Text>
+                  {detailRecipe.steps.map((step, idx) => (
+                    <View key={idx} style={[styles.stepDisplayRow, { backgroundColor: colors.card, borderColor: colors.border }]}>
+                      <View style={[styles.stepNumBubble, { backgroundColor: "#3b82f620" }]}>
+                        <Text style={[styles.stepNumText, { color: "#3b82f6" }]}>{idx + 1}</Text>
+                      </View>
+                      <Text style={[styles.stepDisplayText, { color: colors.foreground }]}>{step}</Text>
+                    </View>
+                  ))}
+                </>
+              ) : detailRecipe.notes ? (
                 <>
                   <Text style={[styles.label, { color: colors.mutedForeground }]}>NOTES / INSTRUCTIONS</Text>
                   <View style={[styles.notesBox, { backgroundColor: colors.card, borderColor: colors.border }]}>
@@ -1698,6 +1779,19 @@ const styles = StyleSheet.create({
   ingChipMeta: { fontSize: 12, marginTop: 1 },
   removeBtn: { fontSize: 18, fontWeight: "700" },
   ingForm: { borderRadius: 12, borderWidth: 1.5, padding: 14, gap: 4, marginBottom: 8 },
+  photoUploadBtn: { borderWidth: 1.5, borderStyle: "dashed", borderRadius: 12, padding: 24, alignItems: "center", gap: 8 },
+  photoUploadText: { fontSize: 14, textAlign: "center" },
+  photoContainer: { borderRadius: 12, overflow: "hidden", gap: 0 },
+  photoPreview: { width: "100%", height: 200, borderRadius: 12 },
+  photoRemoveBtn: { borderWidth: 1, borderRadius: 8, padding: 10, alignItems: "center", marginTop: 6 },
+  photoRemoveBtnText: { fontSize: 14, fontWeight: "600" },
+  stepEditorRow: { flexDirection: "row", alignItems: "flex-start", borderRadius: 10, borderWidth: 1, padding: 10, gap: 10, marginBottom: 8 },
+  stepNumBubble: { width: 28, height: 28, borderRadius: 14, justifyContent: "center", alignItems: "center", marginTop: 2 },
+  stepNumText: { fontSize: 13, fontWeight: "800" },
+  stepEditorInput: { flex: 1, fontSize: 14, lineHeight: 20, paddingTop: 4, minHeight: 40 },
+  stepDisplayRow: { flexDirection: "row", alignItems: "flex-start", borderRadius: 10, borderWidth: 1, padding: 12, gap: 10, marginBottom: 8 },
+  stepDisplayText: { flex: 1, fontSize: 14, lineHeight: 20, paddingTop: 4 },
+  detailPhoto: { width: "100%", height: 220, borderRadius: 14, marginBottom: 4 },
   pickerBtn: { borderWidth: 1.5, borderRadius: 10, padding: 13, flexDirection: "row", alignItems: "center", gap: 10 },
   pickerBtnName: { fontSize: 15, fontWeight: "600" },
   pickerBtnSub: { fontSize: 12, marginTop: 2 },
