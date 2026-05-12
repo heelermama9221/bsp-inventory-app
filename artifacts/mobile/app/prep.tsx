@@ -99,6 +99,10 @@ export default function PrepScreen() {
   // Batch calc
   const [batchRecipeId, setBatchRecipeId] = useState<string | null>(null);
   const [batchMultiplier, setBatchMultiplier] = useState("1");
+  const [batchSearch, setBatchSearch] = useState("");
+
+  // Cost Calculator search
+  const [costSearch, setCostSearch] = useState("");
 
   // Daily Prep Plan
   const [planBatches, setPlanBatches] = useStorage<Record<string, string>>("daily_prep_batches", {});
@@ -446,22 +450,30 @@ export default function PrepScreen() {
               <Text style={[styles.emptyText, { color: colors.mutedForeground, textAlign: "center" }]}>No recipes yet. Add one in the Recipe Book tab.</Text>
             </View>
           ) : (
-            <ScrollView horizontal showsHorizontalScrollIndicator={false} contentContainerStyle={styles.recipePickerRow}>
-              {recipes.map((r) => {
-                const isSelected = r.id === batchRecipeId;
-                const catColor = CAT_COLORS[r.category] ?? "#6b7280";
-                return (
-                  <TouchableOpacity
-                    key={r.id}
-                    style={[styles.recipeChip, { borderColor: isSelected ? "#16a34a" : colors.border, backgroundColor: isSelected ? "#16a34a" : colors.card }]}
-                    onPress={() => setBatchRecipeId(r.id)}
-                  >
-                    <Text style={[styles.recipeChipText, { color: isSelected ? "#fff" : colors.foreground }]}>{r.name}</Text>
-                    <Text style={[styles.recipeChipSub, { color: isSelected ? "#ffffff99" : colors.mutedForeground }]}>{r.category}</Text>
-                  </TouchableOpacity>
-                );
-              })}
-            </ScrollView>
+            <>
+              <TextInput
+                style={[styles.pickerSearchBar, { borderColor: colors.border, color: colors.foreground, backgroundColor: colors.card }]}
+                placeholder="Search recipes…"
+                placeholderTextColor={colors.mutedForeground}
+                value={batchSearch}
+                onChangeText={setBatchSearch}
+              />
+              <ScrollView horizontal showsHorizontalScrollIndicator={false} contentContainerStyle={styles.recipePickerRow}>
+                {recipes.filter((r) => !batchSearch.trim() || r.name.toLowerCase().includes(batchSearch.toLowerCase()) || r.category.toLowerCase().includes(batchSearch.toLowerCase())).map((r) => {
+                  const isSelected = r.id === batchRecipeId;
+                  return (
+                    <TouchableOpacity
+                      key={r.id}
+                      style={[styles.recipeChip, { borderColor: isSelected ? "#16a34a" : colors.border, backgroundColor: isSelected ? "#16a34a" : colors.card }]}
+                      onPress={() => setBatchRecipeId(r.id)}
+                    >
+                      <Text style={[styles.recipeChipText, { color: isSelected ? "#fff" : colors.foreground }]}>{r.name}</Text>
+                      <Text style={[styles.recipeChipSub, { color: isSelected ? "#ffffff99" : colors.mutedForeground }]}>{r.category}</Text>
+                    </TouchableOpacity>
+                  );
+                })}
+              </ScrollView>
+            </>
           )}
 
           {batchRecipe && (
@@ -897,26 +909,34 @@ export default function PrepScreen() {
               <Text style={[styles.emptyText, { color: colors.mutedForeground, textAlign: "center" }]}>No recipes yet. Add one in the 📖 Book tab.</Text>
             </View>
           ) : (
-            <ScrollView horizontal showsHorizontalScrollIndicator={false} contentContainerStyle={styles.recipePickerRow}>
-              {recipes.map((r) => {
-                const isSel = r.id === costRecipeId;
-                const catColor = CAT_COLORS[r.category] ?? "#6b7280";
-                return (
-                  <TouchableOpacity
-                    key={r.id}
-                    style={[styles.recipeChip, { borderColor: isSel ? "#f59e0b" : colors.border, backgroundColor: isSel ? "#f59e0b" : colors.card }]}
-                    onPress={() => {
-                      setCostRecipeId(r.id);
-                      setCostOverrides({});
-                      if (r.servings) setCostServings(r.servings);
-                    }}
-                  >
-                    <Text style={[styles.recipeChipText, { color: isSel ? "#fff" : colors.foreground }]}>{r.name}</Text>
-                    <Text style={[styles.recipeChipSub, { color: isSel ? "#ffffffaa" : colors.mutedForeground }]}>{r.category}</Text>
-                  </TouchableOpacity>
-                );
-              })}
-            </ScrollView>
+            <>
+              <TextInput
+                style={[styles.pickerSearchBar, { borderColor: colors.border, color: colors.foreground, backgroundColor: colors.card }]}
+                placeholder="Search recipes…"
+                placeholderTextColor={colors.mutedForeground}
+                value={costSearch}
+                onChangeText={setCostSearch}
+              />
+              <ScrollView horizontal showsHorizontalScrollIndicator={false} contentContainerStyle={styles.recipePickerRow}>
+                {recipes.filter((r) => !costSearch.trim() || r.name.toLowerCase().includes(costSearch.toLowerCase()) || r.category.toLowerCase().includes(costSearch.toLowerCase())).map((r) => {
+                  const isSel = r.id === costRecipeId;
+                  return (
+                    <TouchableOpacity
+                      key={r.id}
+                      style={[styles.recipeChip, { borderColor: isSel ? "#f59e0b" : colors.border, backgroundColor: isSel ? "#f59e0b" : colors.card }]}
+                      onPress={() => {
+                        setCostRecipeId(r.id);
+                        setCostOverrides({});
+                        if (r.servings) setCostServings(r.servings);
+                      }}
+                    >
+                      <Text style={[styles.recipeChipText, { color: isSel ? "#fff" : colors.foreground }]}>{r.name}</Text>
+                      <Text style={[styles.recipeChipSub, { color: isSel ? "#ffffffaa" : colors.mutedForeground }]}>{r.category}</Text>
+                    </TouchableOpacity>
+                  );
+                })}
+              </ScrollView>
+            </>
           )}
 
           {costRecipe && (
@@ -1575,6 +1595,7 @@ const styles = StyleSheet.create({
   infoText: { fontSize: 13, lineHeight: 18 },
   sectionLabel: { fontSize: 11, fontWeight: "700", letterSpacing: 0.5 },
   recipePickerRow: { gap: 10, flexDirection: "row", paddingVertical: 4 },
+  pickerSearchBar: { borderWidth: 1, borderRadius: 10, paddingHorizontal: 12, paddingVertical: 9, fontSize: 14, marginBottom: 8 },
   recipeChip: { borderWidth: 1.5, borderRadius: 10, padding: 12, minWidth: 110, alignItems: "center", gap: 4 },
   recipeChipText: { fontSize: 13, fontWeight: "700", textAlign: "center" },
   recipeChipSub: { fontSize: 11, textAlign: "center" },
