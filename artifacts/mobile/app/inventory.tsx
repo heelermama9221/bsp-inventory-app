@@ -1,6 +1,7 @@
-import React, { useState } from "react";
+import React, { useState, useEffect, useRef } from "react";
 import {
   Alert,
+  Animated,
   Modal,
   ScrollView,
   StyleSheet,
@@ -88,7 +89,26 @@ type InventoryItem = {
   location: string;
   lastCounted: string;
   cost: string;
+  distributor: string;
+  sku: string;
 };
+
+// ── Pulsing indicator for below-par items ─────────────────────────────────────
+
+function PulsingDot({ color }: { color: string }) {
+  const opacity = useRef(new Animated.Value(1)).current;
+  useEffect(() => {
+    Animated.loop(
+      Animated.sequence([
+        Animated.timing(opacity, { toValue: 0.2, duration: 600, useNativeDriver: true }),
+        Animated.timing(opacity, { toValue: 1, duration: 600, useNativeDriver: true }),
+      ])
+    ).start();
+  }, [opacity]);
+  return (
+    <Animated.View style={{ opacity, width: 8, height: 8, borderRadius: 4, backgroundColor: color, marginTop: 2 }} />
+  );
+}
 
 const UNITS = ["lbs", "oz", "each", "case", "gallon", "bottle", "keg", "bag", "box"];
 const LOCATIONS = ["Walk-in Cooler", "Freezer", "Dry Storage", "Bar", "Line", "Prep Area", "Service Station"];
@@ -130,6 +150,7 @@ export default function InventoryScreen() {
   const [form, setForm] = useState({
     name: "", category: "Produce", currentStock: "", parLevel: "",
     unit: "each", unitsPerCase: "", location: "Dry Storage", cost: "",
+    distributor: "", sku: "",
   });
   const [walkVisible, setWalkVisible] = useState(false);
   const [walkCounts, setWalkCounts] = useState<Record<string, WalkCount>>({});
@@ -141,13 +162,20 @@ export default function InventoryScreen() {
   if (!loaded) return null;
 
   function resetForm() {
-    setForm({ name: "", category: "Produce", currentStock: "", parLevel: "", unit: "each", unitsPerCase: "", location: "Dry Storage", cost: "" });
+    setForm({ name: "", category: "Produce", currentStock: "", parLevel: "", unit: "each", unitsPerCase: "", location: "Dry Storage", cost: "", distributor: "", sku: "" });
     setEditItem(null);
   }
 
   function openEdit(item: InventoryItem) {
     setEditItem(item);
-    setForm({ name: item.name, category: item.category, currentStock: item.currentStock, parLevel: item.parLevel, unit: item.unit, unitsPerCase: item.unitsPerCase ?? "", location: item.location, cost: item.cost });
+    const pMatch = pricingItems.find((p) => p.item.toLowerCase() === item.name.toLowerCase());
+    setForm({
+      name: item.name, category: item.category, currentStock: item.currentStock,
+      parLevel: item.parLevel, unit: item.unit, unitsPerCase: item.unitsPerCase ?? "",
+      location: item.location, cost: item.cost,
+      distributor: item.distributor || pMatch?.distributor || "",
+      sku: item.sku || pMatch?.sku || "",
+    });
     setModalVisible(true);
   }
 
@@ -170,32 +198,35 @@ export default function InventoryScreen() {
     setModalVisible(false);
     resetForm();
 
-    // Auto-sync cost to Distributor Pricing
-    if (form.cost.trim()) {
-      const name = form.name.trim();
+    // Auto-sync cost + distributor + SKU to Distributor Pricing
+    const name = form.name.trim();
+    if (form.cost.trim() || form.distributor.trim() || form.sku.trim()) {
       setPricingItems((prev) => {
         const existing = prev.find((p) => p.item.toLowerCase() === name.toLowerCase());
         if (existing) {
-          if (existing.currentPrice !== form.cost) {
-            return prev.map((p) =>
-              p.id === existing.id
-                ? { ...p, previousPrice: p.currentPrice, currentPrice: form.cost, lastUpdated: new Date().toLocaleDateString() }
-                : p
-            );
+          const updates: Partial<PriceSyncEntry> = {};
+          if (form.cost.trim() && existing.currentPrice !== form.cost) {
+            updates.previousPrice = existing.currentPrice;
+            updates.currentPrice = form.cost;
+            updates.lastUpdated = new Date().toLocaleDateString();
           }
-          return prev;
+          if (form.distributor.trim()) updates.distributor = form.distributor.trim();
+          if (form.sku.trim()) updates.sku = form.sku.trim();
+          return Object.keys(updates).length > 0
+            ? prev.map((p) => p.id === existing.id ? { ...p, ...updates } : p)
+            : prev;
         }
         return [
           {
             id: `inv_${Date.now()}`,
             item: name,
-            distributor: "",
+            distributor: form.distributor.trim(),
             category: form.category,
             unit: form.unit,
             currentPrice: form.cost,
             previousPrice: "",
             lastUpdated: new Date().toLocaleDateString(),
-            sku: "",
+            sku: form.sku.trim(),
             notes: "Synced from Inventory",
           },
           ...prev,
@@ -435,16 +466,25 @@ export default function InventoryScreen() {
         {filtered.map((item) => {
           const status = stockStatus(item);
           const statusColor = STATUS_COLOR[status];
+          const isBelowPar = status === "critical" || status === "low";
+          const distributor = item.distributor || pricingItems.find((p) => p.item.toLowerCase() === item.name.toLowerCase())?.distributor || "";
+          const sku = item.sku || pricingItems.find((p) => p.item.toLowerCase() === item.name.toLowerCase())?.sku || "";
           return (
             <TouchableOpacity
               key={item.id}
-              style={[styles.card, { backgroundColor: colors.card, borderColor: colors.border, borderLeftColor: statusColor, borderLeftWidth: 4 }]}
+              style={[styles.card, { backgroundColor: colors.card, borderColor: isBelowPar ? statusColor + "50" : colors.border, borderLeftColor: statusColor, borderLeftWidth: 4 }]}
               onPress={() => openEdit(item)}
               onLongPress={() => deleteItem(item.id)}
             >
               <View style={styles.cardRow}>
                 <View style={{ flex: 1 }}>
                   <Text style={[styles.cardTitle, { color: colors.foreground }]}>{item.name}</Text>
+                  {(distributor || sku) ? (
+                    <View style={styles.cardDistributorRow}>
+                      {distributor ? <Text style={[styles.cardDistributor, { color: colors.mutedForeground }]}>🏢 {distributor}</Text> : null}
+                      {sku ? <Text style={[styles.cardSku, { color: colors.mutedForeground }]}>SKU {sku}</Text> : null}
+                    </View>
+                  ) : null}
                   <Text style={[styles.cardSub, { color: colors.mutedForeground }]}>
                     {item.category} · {item.location}
                   </Text>
@@ -452,8 +492,11 @@ export default function InventoryScreen() {
                     Stock: {item.currentStock} {item.unit} · Par: {item.parLevel || "—"}{item.unitsPerCase ? ` · ${item.unitsPerCase}/case` : ""} · Counted: {item.lastCounted}
                   </Text>
                 </View>
-                <View style={[styles.statusBadge, { backgroundColor: statusColor + "20" }]}>
-                  <Text style={[styles.statusBadgeText, { color: statusColor }]}>{STATUS_LABEL[status]}</Text>
+                <View style={{ alignItems: "center", gap: 6 }}>
+                  {isBelowPar && <PulsingDot color={statusColor} />}
+                  <View style={[styles.statusBadge, { backgroundColor: statusColor + "20" }]}>
+                    <Text style={[styles.statusBadgeText, { color: statusColor }]}>{STATUS_LABEL[status]}</Text>
+                  </View>
                 </View>
               </View>
             </TouchableOpacity>
@@ -808,6 +851,24 @@ export default function InventoryScreen() {
 
             <Text style={[styles.label, { color: colors.mutedForeground }]}>COST PER UNIT ($)</Text>
             <TextInput style={[styles.input, { borderColor: colors.border, color: colors.foreground, backgroundColor: colors.card }]} placeholder="0.00" placeholderTextColor={colors.mutedForeground} value={form.cost} onChangeText={(v) => setForm((f) => ({ ...f, cost: v }))} keyboardType="decimal-pad" />
+
+            <Text style={[styles.label, { color: colors.mutedForeground }]}>DISTRIBUTOR</Text>
+            <TextInput
+              style={[styles.input, { borderColor: colors.border, color: colors.foreground, backgroundColor: colors.card }]}
+              placeholder="e.g. Sysco, US Foods, Gordon Food Service"
+              placeholderTextColor={colors.mutedForeground}
+              value={form.distributor}
+              onChangeText={(v) => setForm((f) => ({ ...f, distributor: v }))}
+            />
+
+            <Text style={[styles.label, { color: colors.mutedForeground }]}>SKU / ITEM #</Text>
+            <TextInput
+              style={[styles.input, { borderColor: colors.border, color: colors.foreground, backgroundColor: colors.card }]}
+              placeholder="e.g. 1234567 or SYS-ABC-001"
+              placeholderTextColor={colors.mutedForeground}
+              value={form.sku}
+              onChangeText={(v) => setForm((f) => ({ ...f, sku: v }))}
+            />
             <View style={{ height: 40 }} />
           </ScrollView>
         </SafeAreaView>
@@ -883,6 +944,9 @@ const styles = StyleSheet.create({
   statusBadge: { borderRadius: 8, paddingHorizontal: 10, paddingVertical: 5 },
   statusBadgeText: { fontSize: 12, fontWeight: "700" },
   hint: { fontSize: 12, textAlign: "center", marginTop: 4 },
+  cardDistributorRow: { flexDirection: "row", alignItems: "center", gap: 8, marginTop: 3, marginBottom: 1 },
+  cardDistributor: { fontSize: 12, fontWeight: "500" },
+  cardSku: { fontSize: 11, fontWeight: "500", opacity: 0.75 },
   modalSafe: { flex: 1 },
   modalHeader: { flexDirection: "row", justifyContent: "space-between", alignItems: "center", padding: 16, borderBottomWidth: 1 },
   modalTitle: { fontSize: 17, fontWeight: "600" },
