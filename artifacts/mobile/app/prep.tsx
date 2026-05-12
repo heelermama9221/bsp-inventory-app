@@ -93,6 +93,10 @@ export default function PrepScreen() {
   const [ingPickerVisible, setIngPickerVisible] = useState(false);
   const [ingPickerSearch, setIngPickerSearch] = useState("");
 
+  // Ingredient inline edit
+  const [editingIngId, setEditingIngId] = useState<string | null>(null);
+  const [editIngForm, setEditIngForm] = useState({ quantity: "", unit: "oz" });
+
   // Detail view
   const [detailRecipe, setDetailRecipe] = useState<Recipe | null>(null);
 
@@ -141,6 +145,7 @@ export default function PrepScreen() {
     setIngredients([]);
     setIngForm(BLANK_ING);
     setIngSection(false);
+    setEditingIngId(null);
     setRecipeModal(true);
   }
 
@@ -150,6 +155,7 @@ export default function PrepScreen() {
     setIngredients([...r.ingredients]);
     setIngForm(BLANK_ING);
     setIngSection(false);
+    setEditingIngId(null);
     setRecipeModal(true);
   }
 
@@ -186,6 +192,18 @@ export default function PrepScreen() {
 
   function removeIngredient(id: string) {
     setIngredients((prev) => prev.filter((i) => i.id !== id));
+  }
+
+  function startEditIng(ing: RecipeIngredient) {
+    setIngSection(false);
+    setEditingIngId(ing.id);
+    setEditIngForm({ quantity: ing.quantity, unit: ing.unit });
+  }
+
+  function saveEditIng() {
+    if (!editIngForm.quantity.trim()) { Alert.alert("Required", "Quantity is required."); return; }
+    setIngredients((prev) => prev.map((i) => i.id === editingIngId ? { ...i, quantity: editIngForm.quantity.trim(), unit: editIngForm.unit } : i));
+    setEditingIngId(null);
   }
 
   // ── Cost Calculator logic ─────────────────────────────────────────────
@@ -1250,17 +1268,58 @@ export default function PrepScreen() {
               </TouchableOpacity>
             </View>
 
-            {ingredients.map((ing) => (
-              <View key={ing.id} style={[styles.ingChip, { backgroundColor: colors.card, borderColor: colors.border }]}>
-                <View style={{ flex: 1 }}>
-                  <Text style={[styles.ingChipName, { color: colors.foreground }]}>{ing.name}</Text>
-                  <Text style={[styles.ingChipMeta, { color: colors.mutedForeground }]}>{ing.quantity} {ing.unit}</Text>
+            {ingredients.map((ing) =>
+              editingIngId === ing.id ? (
+                <View key={ing.id} style={[styles.ingForm, { backgroundColor: colors.card, borderColor: "#f59e0b" }]}>
+                  <Text style={[styles.ingChipName, { color: colors.foreground, marginBottom: 4 }]}>{ing.name}</Text>
+                  <View style={styles.twoCol}>
+                    <View style={{ flex: 1 }}>
+                      <Text style={[styles.label, { color: colors.mutedForeground, marginTop: 0 }]}>QTY PER BATCH</Text>
+                      <TextInput
+                        style={[styles.input, { borderColor: "#f59e0b", color: colors.foreground, backgroundColor: colors.background }]}
+                        placeholder="0"
+                        placeholderTextColor={colors.mutedForeground}
+                        value={editIngForm.quantity}
+                        onChangeText={(v) => setEditIngForm((f) => ({ ...f, quantity: v }))}
+                        keyboardType="decimal-pad"
+                        autoFocus
+                      />
+                    </View>
+                    <View style={{ flex: 1 }}>
+                      <Text style={[styles.label, { color: colors.mutedForeground, marginTop: 0 }]}>UNIT</Text>
+                      <View style={styles.chipGroup}>
+                        {ING_UNITS.map((u) => (
+                          <TouchableOpacity key={u} style={[styles.chip, { borderColor: colors.border }, editIngForm.unit === u && { backgroundColor: "#f59e0b", borderColor: "#f59e0b" }]} onPress={() => setEditIngForm((f) => ({ ...f, unit: u }))}>
+                            <Text style={[styles.chipText, { color: editIngForm.unit === u ? "#fff" : colors.foreground }]}>{u}</Text>
+                          </TouchableOpacity>
+                        ))}
+                      </View>
+                    </View>
+                  </View>
+                  <View style={styles.ingFormActions}>
+                    <TouchableOpacity style={[styles.ingCancelBtn, { borderColor: colors.border }]} onPress={() => setEditingIngId(null)}>
+                      <Text style={[styles.ingCancelBtnText, { color: colors.mutedForeground }]}>Cancel</Text>
+                    </TouchableOpacity>
+                    <TouchableOpacity style={[styles.ingSaveBtn, { backgroundColor: "#f59e0b" }]} onPress={saveEditIng}>
+                      <Text style={styles.ingSaveBtnText}>Save Changes</Text>
+                    </TouchableOpacity>
+                  </View>
                 </View>
-                <TouchableOpacity onPress={() => removeIngredient(ing.id)}>
-                  <Text style={[styles.removeBtn, { color: colors.destructive }]}>✕</Text>
-                </TouchableOpacity>
-              </View>
-            ))}
+              ) : (
+                <View key={ing.id} style={[styles.ingChip, { backgroundColor: colors.card, borderColor: colors.border }]}>
+                  <View style={{ flex: 1 }}>
+                    <Text style={[styles.ingChipName, { color: colors.foreground }]}>{ing.name}</Text>
+                    <Text style={[styles.ingChipMeta, { color: colors.mutedForeground }]}>{ing.quantity} {ing.unit}</Text>
+                  </View>
+                  <TouchableOpacity onPress={() => startEditIng(ing)} style={{ paddingHorizontal: 8 }}>
+                    <Text style={{ color: "#f59e0b", fontSize: 16 }}>✏️</Text>
+                  </TouchableOpacity>
+                  <TouchableOpacity onPress={() => removeIngredient(ing.id)}>
+                    <Text style={[styles.removeBtn, { color: colors.destructive }]}>✕</Text>
+                  </TouchableOpacity>
+                </View>
+              )
+            )}
 
             {ingSection && (
               <View style={[styles.ingForm, { backgroundColor: colors.card, borderColor: "#16a34a" }]}>
