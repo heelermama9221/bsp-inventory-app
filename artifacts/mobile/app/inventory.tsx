@@ -63,6 +63,8 @@ type PriceSyncEntry = {
   lastUpdated: string; sku: string; notes: string;
 };
 
+type WalkCount = { cases: string; loose: string };
+
 export default function InventoryScreen() {
   const colors = useColors();
   const [items, setItems, loaded] = useStorage<InventoryItem[]>("inventory_items", []);
@@ -76,6 +78,8 @@ export default function InventoryScreen() {
     name: "", category: "Produce", currentStock: "", parLevel: "",
     unit: "each", unitsPerCase: "", location: "Dry Storage", cost: "",
   });
+  const [walkVisible, setWalkVisible] = useState(false);
+  const [walkCounts, setWalkCounts] = useState<Record<string, WalkCount>>({});
 
   if (!loaded) return null;
 
@@ -150,6 +154,42 @@ export default function InventoryScreen() {
     ]);
   }
 
+  function openWalk() {
+    const init: Record<string, WalkCount> = {};
+    items.forEach((item) => {
+      init[item.id] = { cases: "", loose: item.currentStock || "" };
+    });
+    setWalkCounts(init);
+    setWalkVisible(true);
+  }
+
+  function walkTotal(item: InventoryItem): number {
+    const wc = walkCounts[item.id];
+    if (!wc) return 0;
+    const upc = parseFloat(item.unitsPerCase) || 0;
+    const cases = parseFloat(wc.cases) || 0;
+    const loose = parseFloat(wc.loose) || 0;
+    return upc > 0 ? cases * upc + loose : loose;
+  }
+
+  function walkTouched(item: InventoryItem): boolean {
+    const wc = walkCounts[item.id];
+    if (!wc) return false;
+    return wc.cases !== "" || wc.loose !== "";
+  }
+
+  function saveWalkCounts() {
+    const today = new Date().toLocaleDateString();
+    setItems((prev) =>
+      prev.map((item) => {
+        if (!walkTouched(item)) return item;
+        return { ...item, currentStock: String(walkTotal(item)), lastCounted: today };
+      })
+    );
+    Alert.alert("Count Saved", "Inventory updated from walk count.");
+    setWalkVisible(false);
+  }
+
   const filtered = items.filter((i) => {
     const matchCat = filterCat === "All" || i.category === filterCat;
     const matchStatus = filterStatus === "all" || stockStatus(i) === filterStatus;
@@ -210,6 +250,9 @@ export default function InventoryScreen() {
         <View style={styles.btnRow}>
           <TouchableOpacity style={[styles.addBtn, { backgroundColor: "#ef4444", flex: 1 }]} onPress={() => setModalVisible(true)}>
             <Text style={styles.addBtnText}>+ Add Item</Text>
+          </TouchableOpacity>
+          <TouchableOpacity style={[styles.walkBtn, { borderColor: "#ef4444" }]} onPress={openWalk}>
+            <Text style={[styles.walkBtnText, { color: "#ef4444" }]}>🚶 Walk</Text>
           </TouchableOpacity>
           <TouchableOpacity
             style={[styles.exportBtn, { borderColor: "#ef4444" }]}
@@ -274,6 +317,216 @@ export default function InventoryScreen() {
         <Text style={[styles.hint, { color: colors.mutedForeground }]}>Tap to edit · Long press to delete</Text>
         <View style={{ height: 40 }} />
       </ScrollView>
+
+      {/* ── Inventory Walk Modal ────────────────────────────────────────── */}
+      <Modal visible={walkVisible} animationType="slide" presentationStyle="pageSheet">
+        <SafeAreaView style={[styles.modalSafe, { backgroundColor: colors.background }]}>
+          <View style={[styles.modalHeader, { borderBottomColor: colors.border }]}>
+            <TouchableOpacity onPress={() => setWalkVisible(false)}>
+              <Text style={[styles.cancelBtn, { color: colors.destructive }]}>Cancel</Text>
+            </TouchableOpacity>
+            <Text style={[styles.modalTitle, { color: colors.foreground }]}>Inventory Walk</Text>
+            <TouchableOpacity onPress={saveWalkCounts}>
+              <Text style={[styles.saveBtn, { color: "#ef4444" }]}>Save All</Text>
+            </TouchableOpacity>
+          </View>
+
+          {/* Progress bar */}
+          {(() => {
+            const total = items.length;
+            const counted = items.filter(walkTouched).length;
+            const pct = total > 0 ? counted / total : 0;
+            return (
+              <View style={[styles.walkProgressBar, { backgroundColor: colors.card, borderBottomColor: colors.border }]}>
+                <View style={styles.walkProgressRow}>
+                  <Text style={[styles.walkProgressLabel, { color: colors.mutedForeground }]}>
+                    {counted} of {total} items counted
+                  </Text>
+                  <Text style={[styles.walkProgressPct, { color: "#ef4444" }]}>{Math.round(pct * 100)}%</Text>
+                </View>
+                <View style={[styles.walkProgressTrack, { backgroundColor: colors.border }]}>
+                  <View style={[styles.walkProgressFill, { backgroundColor: "#ef4444", width: `${pct * 100}%` as any }]} />
+                </View>
+              </View>
+            );
+          })()}
+
+          <ScrollView keyboardShouldPersistTaps="handled" contentContainerStyle={{ paddingBottom: 40 }}>
+            {items.length === 0 && (
+              <View style={styles.empty}>
+                <Text style={[styles.emptyText, { color: colors.mutedForeground }]}>No inventory items yet. Add items first.</Text>
+              </View>
+            )}
+            {LOCATIONS.map((loc) => {
+              const locItems = items.filter((i) => i.location === loc);
+              if (locItems.length === 0) return null;
+              return (
+                <View key={loc}>
+                  <View style={[styles.walkLocHeader, { backgroundColor: colors.card, borderBottomColor: colors.border, borderTopColor: colors.border }]}>
+                    <Text style={[styles.walkLocTitle, { color: colors.foreground }]}>{loc}</Text>
+                    <Text style={[styles.walkLocCount, { color: colors.mutedForeground }]}>
+                      {locItems.filter(walkTouched).length}/{locItems.length}
+                    </Text>
+                  </View>
+                  {locItems.map((item) => {
+                    const wc = walkCounts[item.id] || { cases: "", loose: "" };
+                    const upc = parseFloat(item.unitsPerCase) || 0;
+                    const total = walkTotal(item);
+                    const touched = walkTouched(item);
+                    const status = stockStatus(item);
+                    return (
+                      <View
+                        key={item.id}
+                        style={[
+                          styles.walkCard,
+                          { backgroundColor: colors.background, borderBottomColor: colors.border },
+                          touched && { borderLeftColor: "#ef4444", borderLeftWidth: 3 },
+                        ]}
+                      >
+                        <View style={styles.walkCardHeader}>
+                          <View style={{ flex: 1 }}>
+                            <Text style={[styles.walkItemName, { color: colors.foreground }]}>{item.name}</Text>
+                            <Text style={[styles.walkItemMeta, { color: colors.mutedForeground }]}>
+                              {item.category} · par {item.parLevel || "—"} {item.unit}
+                              {upc > 0 ? ` · ${upc}/case` : ""}
+                            </Text>
+                          </View>
+                          <View style={[styles.walkStatusDot, { backgroundColor: STATUS_COLOR[status] + "30" }]}>
+                            <Text style={[styles.walkStatusDotText, { color: STATUS_COLOR[status] }]}>
+                              {STATUS_LABEL[status]}
+                            </Text>
+                          </View>
+                        </View>
+
+                        <View style={styles.walkInputRow}>
+                          {upc > 0 && (
+                            <View style={styles.walkField}>
+                              <Text style={[styles.walkFieldLabel, { color: colors.mutedForeground }]}>CASES</Text>
+                              <TextInput
+                                style={[styles.walkInput, { borderColor: wc.cases ? "#ef4444" : colors.border, color: colors.foreground, backgroundColor: colors.card }]}
+                                placeholder="0"
+                                placeholderTextColor={colors.mutedForeground}
+                                value={wc.cases}
+                                onChangeText={(v) =>
+                                  setWalkCounts((prev) => ({ ...prev, [item.id]: { ...prev[item.id], cases: v } }))
+                                }
+                                keyboardType="decimal-pad"
+                              />
+                              {wc.cases ? (
+                                <Text style={[styles.walkFieldSub, { color: colors.mutedForeground }]}>
+                                  = {(parseFloat(wc.cases) || 0) * upc} {item.unit}
+                                </Text>
+                              ) : null}
+                            </View>
+                          )}
+
+                          <View style={styles.walkField}>
+                            <Text style={[styles.walkFieldLabel, { color: colors.mutedForeground }]}>
+                              {upc > 0 ? "LOOSE" : "COUNT"} ({item.unit})
+                            </Text>
+                            <TextInput
+                              style={[styles.walkInput, { borderColor: wc.loose ? "#ef4444" : colors.border, color: colors.foreground, backgroundColor: colors.card }]}
+                              placeholder="0"
+                              placeholderTextColor={colors.mutedForeground}
+                              value={wc.loose}
+                              onChangeText={(v) =>
+                                setWalkCounts((prev) => ({ ...prev, [item.id]: { ...prev[item.id], loose: v } }))
+                              }
+                              keyboardType="decimal-pad"
+                            />
+                          </View>
+
+                          <View style={[styles.walkTotalBox, { backgroundColor: touched ? "#ef444415" : colors.card, borderColor: touched ? "#ef4444" : colors.border }]}>
+                            <Text style={[styles.walkTotalLabel, { color: colors.mutedForeground }]}>TOTAL</Text>
+                            <Text style={[styles.walkTotalValue, { color: touched ? "#ef4444" : colors.mutedForeground }]}>
+                              {touched ? total : "—"}
+                            </Text>
+                            <Text style={[styles.walkTotalUnit, { color: colors.mutedForeground }]}>{item.unit}</Text>
+                          </View>
+                        </View>
+                      </View>
+                    );
+                  })}
+                </View>
+              );
+            })}
+
+            {/* Items with unknown/no location */}
+            {(() => {
+              const others = items.filter((i) => !LOCATIONS.includes(i.location));
+              if (others.length === 0) return null;
+              return (
+                <View>
+                  <View style={[styles.walkLocHeader, { backgroundColor: colors.card, borderBottomColor: colors.border, borderTopColor: colors.border }]}>
+                    <Text style={[styles.walkLocTitle, { color: colors.foreground }]}>Other</Text>
+                    <Text style={[styles.walkLocCount, { color: colors.mutedForeground }]}>
+                      {others.filter(walkTouched).length}/{others.length}
+                    </Text>
+                  </View>
+                  {others.map((item) => {
+                    const wc = walkCounts[item.id] || { cases: "", loose: "" };
+                    const upc = parseFloat(item.unitsPerCase) || 0;
+                    const total = walkTotal(item);
+                    const touched = walkTouched(item);
+                    const status = stockStatus(item);
+                    return (
+                      <View
+                        key={item.id}
+                        style={[styles.walkCard, { backgroundColor: colors.background, borderBottomColor: colors.border }, touched && { borderLeftColor: "#ef4444", borderLeftWidth: 3 }]}
+                      >
+                        <View style={styles.walkCardHeader}>
+                          <View style={{ flex: 1 }}>
+                            <Text style={[styles.walkItemName, { color: colors.foreground }]}>{item.name}</Text>
+                            <Text style={[styles.walkItemMeta, { color: colors.mutedForeground }]}>
+                              {item.category} · par {item.parLevel || "—"} {item.unit}
+                            </Text>
+                          </View>
+                          <View style={[styles.walkStatusDot, { backgroundColor: STATUS_COLOR[status] + "30" }]}>
+                            <Text style={[styles.walkStatusDotText, { color: STATUS_COLOR[status] }]}>{STATUS_LABEL[status]}</Text>
+                          </View>
+                        </View>
+                        <View style={styles.walkInputRow}>
+                          {upc > 0 && (
+                            <View style={styles.walkField}>
+                              <Text style={[styles.walkFieldLabel, { color: colors.mutedForeground }]}>CASES</Text>
+                              <TextInput
+                                style={[styles.walkInput, { borderColor: wc.cases ? "#ef4444" : colors.border, color: colors.foreground, backgroundColor: colors.card }]}
+                                placeholder="0"
+                                placeholderTextColor={colors.mutedForeground}
+                                value={wc.cases}
+                                onChangeText={(v) => setWalkCounts((prev) => ({ ...prev, [item.id]: { ...prev[item.id], cases: v } }))}
+                                keyboardType="decimal-pad"
+                              />
+                            </View>
+                          )}
+                          <View style={styles.walkField}>
+                            <Text style={[styles.walkFieldLabel, { color: colors.mutedForeground }]}>
+                              {upc > 0 ? "LOOSE" : "COUNT"} ({item.unit})
+                            </Text>
+                            <TextInput
+                              style={[styles.walkInput, { borderColor: wc.loose ? "#ef4444" : colors.border, color: colors.foreground, backgroundColor: colors.card }]}
+                              placeholder="0"
+                              placeholderTextColor={colors.mutedForeground}
+                              value={wc.loose}
+                              onChangeText={(v) => setWalkCounts((prev) => ({ ...prev, [item.id]: { ...prev[item.id], loose: v } }))}
+                              keyboardType="decimal-pad"
+                            />
+                          </View>
+                          <View style={[styles.walkTotalBox, { backgroundColor: touched ? "#ef444415" : colors.card, borderColor: touched ? "#ef4444" : colors.border }]}>
+                            <Text style={[styles.walkTotalLabel, { color: colors.mutedForeground }]}>TOTAL</Text>
+                            <Text style={[styles.walkTotalValue, { color: touched ? "#ef4444" : colors.mutedForeground }]}>{touched ? total : "—"}</Text>
+                            <Text style={[styles.walkTotalUnit, { color: colors.mutedForeground }]}>{item.unit}</Text>
+                          </View>
+                        </View>
+                      </View>
+                    );
+                  })}
+                </View>
+              );
+            })()}
+          </ScrollView>
+        </SafeAreaView>
+      </Modal>
 
       <Modal visible={modalVisible} animationType="slide" presentationStyle="pageSheet">
         <SafeAreaView style={[styles.modalSafe, { backgroundColor: colors.background }]}>
@@ -364,8 +617,34 @@ const styles = StyleSheet.create({
   btnRow: { flexDirection: "row", gap: 10 },
   addBtn: { borderRadius: 10, padding: 14, alignItems: "center" },
   addBtnText: { color: "#fff", fontWeight: "700", fontSize: 15 },
+  walkBtn: { borderRadius: 10, borderWidth: 1.5, paddingHorizontal: 14, justifyContent: "center", alignItems: "center" },
+  walkBtnText: { fontWeight: "700", fontSize: 14 },
   exportBtn: { borderRadius: 10, borderWidth: 1.5, paddingHorizontal: 16, justifyContent: "center", alignItems: "center" },
   exportBtnText: { fontWeight: "700", fontSize: 14 },
+  walkProgressBar: { padding: 12, borderBottomWidth: 1 },
+  walkProgressRow: { flexDirection: "row", justifyContent: "space-between", marginBottom: 6 },
+  walkProgressLabel: { fontSize: 13 },
+  walkProgressPct: { fontSize: 13, fontWeight: "700" },
+  walkProgressTrack: { height: 6, borderRadius: 3, overflow: "hidden" },
+  walkProgressFill: { height: 6, borderRadius: 3 },
+  walkLocHeader: { flexDirection: "row", justifyContent: "space-between", alignItems: "center", paddingHorizontal: 16, paddingVertical: 10, borderTopWidth: 1, borderBottomWidth: 1, marginTop: 8 },
+  walkLocTitle: { fontSize: 14, fontWeight: "700", letterSpacing: 0.3 },
+  walkLocCount: { fontSize: 13 },
+  walkCard: { paddingHorizontal: 16, paddingVertical: 12, borderBottomWidth: 1, gap: 10 },
+  walkCardHeader: { flexDirection: "row", alignItems: "flex-start", gap: 10 },
+  walkItemName: { fontSize: 15, fontWeight: "600" },
+  walkItemMeta: { fontSize: 12, marginTop: 2 },
+  walkStatusDot: { borderRadius: 6, paddingHorizontal: 8, paddingVertical: 3 },
+  walkStatusDotText: { fontSize: 11, fontWeight: "700" },
+  walkInputRow: { flexDirection: "row", gap: 8, alignItems: "flex-end" },
+  walkField: { flex: 1, gap: 4 },
+  walkFieldLabel: { fontSize: 10, fontWeight: "700", letterSpacing: 0.5 },
+  walkInput: { borderWidth: 1.5, borderRadius: 8, padding: 10, fontSize: 16, fontWeight: "600", textAlign: "center" },
+  walkFieldSub: { fontSize: 10, textAlign: "center" },
+  walkTotalBox: { width: 72, borderWidth: 1.5, borderRadius: 8, padding: 8, alignItems: "center", gap: 2 },
+  walkTotalLabel: { fontSize: 9, fontWeight: "700", letterSpacing: 0.5 },
+  walkTotalValue: { fontSize: 18, fontWeight: "800" },
+  walkTotalUnit: { fontSize: 10 },
   empty: { alignItems: "center", paddingTop: 40 },
   emptyText: { fontSize: 15 },
   card: { borderRadius: 10, borderWidth: 1, padding: 14 },
