@@ -32,6 +32,8 @@ type Recipe = {
   servings: string;
   notes: string;
   ingredients: RecipeIngredient[];
+  isSpecial: boolean;
+  specialLabel: string;
 };
 
 type InventoryRef = { id: string; name: string; currentStock: string; unit: string; cost: string };
@@ -64,7 +66,7 @@ const CAT_COLORS: Record<string, string> = {
   Beverage: "#3b82f6", Prep: "#16a34a", Other: "#6b7280",
 };
 
-const BLANK_RECIPE = { name: "", category: "Prep", yieldQty: "", yieldUnit: "portions", servings: "", notes: "" };
+const BLANK_RECIPE = { name: "", category: "Prep", yieldQty: "", yieldUnit: "portions", servings: "", notes: "", isSpecial: false, specialLabel: "" };
 const BLANK_ING = { name: "", quantity: "", unit: "oz" };
 
 // ─── Component ────────────────────────────────────────────────────────────────
@@ -114,10 +116,12 @@ export default function PrepScreen() {
   // ── Filtering ─────────────────────────────────────────────────────────
 
   const filtered = recipes.filter((r) => {
-    const matchCat = filterCat === "All" || r.category === filterCat;
+    const matchCat = filterCat === "All" || filterCat === "⭐ Specials" ? (filterCat === "⭐ Specials" ? (r.isSpecial ?? false) : true) : r.category === filterCat;
     const matchSearch = !search.trim() || r.name.toLowerCase().includes(search.toLowerCase());
     return matchCat && matchSearch;
   });
+
+  const specialRecipes = recipes.filter((r) => r.isSpecial);
 
   // ── Recipe CRUD ───────────────────────────────────────────────────────
 
@@ -132,7 +136,7 @@ export default function PrepScreen() {
 
   function openEdit(r: Recipe) {
     setEditingRecipe(r);
-    setRecipeForm({ name: r.name, category: r.category, yieldQty: r.yieldQty, yieldUnit: r.yieldUnit, servings: r.servings, notes: r.notes });
+    setRecipeForm({ name: r.name, category: r.category, yieldQty: r.yieldQty, yieldUnit: r.yieldUnit, servings: r.servings, notes: r.notes, isSpecial: r.isSpecial ?? false, specialLabel: r.specialLabel ?? "" });
     setIngredients([...r.ingredients]);
     setIngForm(BLANK_ING);
     setIngSection(false);
@@ -312,11 +316,16 @@ export default function PrepScreen() {
           </View>
 
           <ScrollView horizontal showsHorizontalScrollIndicator={false} style={[styles.filterScroll, { borderBottomColor: colors.border }]} contentContainerStyle={styles.filterContent}>
-            {["All", ...RECIPE_CATEGORIES].map((cat) => (
-              <TouchableOpacity key={cat} style={[styles.filterChip, { borderColor: colors.border }, filterCat === cat && { backgroundColor: "#16a34a", borderColor: "#16a34a" }]} onPress={() => setFilterCat(cat)}>
-                <Text style={[styles.filterChipText, { color: filterCat === cat ? "#fff" : colors.foreground }]}>{cat}</Text>
-              </TouchableOpacity>
-            ))}
+            {["All", "⭐ Specials", ...RECIPE_CATEGORIES].map((cat) => {
+              const isSpecialChip = cat === "⭐ Specials";
+              const activeColor = isSpecialChip ? "#f59e0b" : "#16a34a";
+              const active = filterCat === cat;
+              return (
+                <TouchableOpacity key={cat} style={[styles.filterChip, { borderColor: colors.border }, active && { backgroundColor: activeColor, borderColor: activeColor }]} onPress={() => setFilterCat(cat)}>
+                  <Text style={[styles.filterChipText, { color: active ? "#fff" : colors.foreground }]}>{cat}</Text>
+                </TouchableOpacity>
+              );
+            })}
           </ScrollView>
 
           <ScrollView contentContainerStyle={styles.content}>
@@ -339,24 +348,36 @@ export default function PrepScreen() {
 
             {filtered.map((r) => {
               const catColor = CAT_COLORS[r.category] ?? "#6b7280";
+              const isSpec = r.isSpecial ?? false;
               return (
                 <TouchableOpacity
                   key={r.id}
-                  style={[styles.card, { backgroundColor: colors.card, borderColor: colors.border, borderLeftColor: catColor, borderLeftWidth: 4 }]}
+                  style={[styles.card, { backgroundColor: colors.card, borderColor: isSpec ? "#f59e0b60" : colors.border, borderLeftColor: isSpec ? "#f59e0b" : catColor, borderLeftWidth: 4 }]}
                   onPress={() => setDetailRecipe(r)}
                   onLongPress={() => deleteRecipe(r.id)}
                 >
                   <View style={styles.cardTop}>
                     <View style={{ flex: 1 }}>
-                      <Text style={[styles.cardTitle, { color: colors.foreground }]}>{r.name}</Text>
+                      <View style={{ flexDirection: "row", alignItems: "center", gap: 6 }}>
+                        {isSpec && <Text style={{ fontSize: 14 }}>⭐</Text>}
+                        <Text style={[styles.cardTitle, { color: colors.foreground }]}>{r.name}</Text>
+                      </View>
                       <Text style={[styles.cardSub, { color: colors.mutedForeground }]}>
+                        {isSpec && r.specialLabel ? `${r.specialLabel}  ·  ` : ""}
                         {r.yieldQty ? `Yield: ${r.yieldQty} ${r.yieldUnit}` : r.category}
                         {r.servings ? ` · ${r.servings} servings` : ""}
                         {" · "}{r.ingredients.length} ingredient{r.ingredients.length !== 1 ? "s" : ""}
                       </Text>
                     </View>
-                    <View style={[styles.catBadge, { backgroundColor: catColor + "20" }]}>
-                      <Text style={[styles.catBadgeText, { color: catColor }]}>{r.category}</Text>
+                    <View style={{ alignItems: "flex-end", gap: 4 }}>
+                      {isSpec && (
+                        <View style={[styles.catBadge, { backgroundColor: "#f59e0b20" }]}>
+                          <Text style={[styles.catBadgeText, { color: "#b45309" }]}>Weekly Special</Text>
+                        </View>
+                      )}
+                      <View style={[styles.catBadge, { backgroundColor: catColor + "20" }]}>
+                        <Text style={[styles.catBadgeText, { color: catColor }]}>{r.category}</Text>
+                      </View>
                     </View>
                   </View>
                 </TouchableOpacity>
@@ -550,6 +571,73 @@ export default function PrepScreen() {
             </View>
           )}
 
+          {/* ── Weekly Specials section ── */}
+          {specialRecipes.length > 0 && (
+            <>
+              <Text style={[styles.sectionLabel, { color: "#b45309", marginTop: 0 }]}>⭐ WEEKLY SPECIALS</Text>
+              {specialRecipes.map((recipe) => {
+                const batches = parseFloat(planBatches[recipe.id]) || 0;
+                const feasibility = batches > 0 ? planFeasible(recipe, batches) : null;
+                const feasIcon = feasibility === "ok" ? "✓" : feasibility === "short" ? "✕" : "?";
+                const feasColor = feasibility === "ok" ? "#16a34a" : feasibility === "short" ? "#ef4444" : "#f59e0b";
+                return (
+                  <View
+                    key={recipe.id}
+                    style={[
+                      styles.planRow,
+                      { backgroundColor: "#f59e0b08", borderColor: "#f59e0b50" },
+                      batches > 0 && { borderLeftColor: feasColor, borderLeftWidth: 3 },
+                    ]}
+                  >
+                    <View style={{ flex: 1 }}>
+                      <View style={{ flexDirection: "row", alignItems: "center", gap: 5 }}>
+                        <Text style={{ fontSize: 13 }}>⭐</Text>
+                        <Text style={[styles.planRecipeName, { color: colors.foreground }]}>{recipe.name}</Text>
+                      </View>
+                      {recipe.specialLabel ? (
+                        <Text style={[styles.planRecipeMeta, { color: "#b45309", fontSize: 12, fontWeight: "600" }]}>{recipe.specialLabel}</Text>
+                      ) : null}
+                      <View style={styles.planRecipeMeta}>
+                        {recipe.yieldQty && batches > 0 && (
+                          <Text style={[styles.planYieldText, { color: colors.mutedForeground }]}>
+                            → {(parseFloat(recipe.yieldQty) * batches).toFixed(1)} {recipe.yieldUnit} total
+                          </Text>
+                        )}
+                      </View>
+                      {feasibility === "short" && batches > 0 && (
+                        <Text style={[styles.planWarnText, { color: "#ef4444" }]}>
+                          ⚠ Inventory may be short for {batches} batch{batches !== 1 ? "es" : ""}
+                        </Text>
+                      )}
+                    </View>
+                    <View style={styles.planStepper}>
+                      {batches > 0 && (
+                        <View style={[styles.planFeasIcon, { backgroundColor: feasColor + "20" }]}>
+                          <Text style={[styles.planFeasIconText, { color: feasColor }]}>{feasIcon}</Text>
+                        </View>
+                      )}
+                      <TouchableOpacity
+                        style={[styles.planStepBtn, { backgroundColor: colors.background, borderColor: colors.border }]}
+                        onPress={() => setPlanBatches((prev) => ({ ...prev, [recipe.id]: String(Math.max(0, batches - 1)) }))}
+                      >
+                        <Text style={[styles.planStepBtnText, { color: colors.foreground }]}>−</Text>
+                      </TouchableOpacity>
+                      <View style={[styles.planBatchBox, { borderColor: batches > 0 ? "#f59e0b" : colors.border, backgroundColor: batches > 0 ? "#f59e0b15" : colors.background }]}>
+                        <Text style={[styles.planBatchNum, { color: batches > 0 ? "#b45309" : colors.mutedForeground }]}>{batches}</Text>
+                      </View>
+                      <TouchableOpacity
+                        style={[styles.planStepBtn, { backgroundColor: "#f59e0b", borderColor: "#f59e0b" }]}
+                        onPress={() => setPlanBatches((prev) => ({ ...prev, [recipe.id]: String(batches + 1) }))}
+                      >
+                        <Text style={[styles.planStepBtnText, { color: "#fff" }]}>+</Text>
+                      </TouchableOpacity>
+                    </View>
+                  </View>
+                );
+              })}
+            </>
+          )}
+
           {/* ── Set batch counts ── */}
           <Text style={[styles.sectionLabel, { color: colors.mutedForeground }]}>SET REQUIRED BATCHES</Text>
 
@@ -688,8 +776,11 @@ export default function PrepScreen() {
                         {recipe.yieldQty ? ` · ${(parseFloat(recipe.yieldQty) * batches).toFixed(1)} ${recipe.yieldUnit}` : ""}
                       </Text>
                     </View>
-                    <View style={[styles.planCatDot, { backgroundColor: catColor + "25" }]}>
-                      <Text style={[styles.planCatDotText, { color: catColor }]}>{recipe.category}</Text>
+                    <View style={{ flexDirection: "row", gap: 6, alignItems: "center" }}>
+                      {(recipe.isSpecial ?? false) && <Text style={{ fontSize: 13 }}>⭐</Text>}
+                      <View style={[styles.planCatDot, { backgroundColor: catColor + "25" }]}>
+                        <Text style={[styles.planCatDotText, { color: catColor }]}>{recipe.category}</Text>
+                      </View>
                     </View>
                   </TouchableOpacity>
                 );
@@ -980,6 +1071,37 @@ export default function PrepScreen() {
 
             <Text style={[styles.label, { color: colors.mutedForeground }]}>NOTES / INSTRUCTIONS</Text>
             <TextInput style={[styles.input, styles.textarea, { borderColor: colors.border, color: colors.foreground, backgroundColor: colors.card }]} placeholder="Steps, temperatures, tips…" placeholderTextColor={colors.mutedForeground} value={recipeForm.notes} onChangeText={(v) => setRecipeForm((f) => ({ ...f, notes: v }))} multiline numberOfLines={4} textAlignVertical="top" />
+
+            {/* Weekly Special toggle */}
+            <Text style={[styles.label, { color: colors.mutedForeground }]}>WEEKLY SPECIAL</Text>
+            <TouchableOpacity
+              style={[styles.specialToggle, { borderColor: recipeForm.isSpecial ? "#f59e0b" : colors.border, backgroundColor: recipeForm.isSpecial ? "#f59e0b12" : colors.card }]}
+              onPress={() => setRecipeForm((f) => ({ ...f, isSpecial: !f.isSpecial }))}
+            >
+              <View style={[styles.specialToggleCheck, { borderColor: recipeForm.isSpecial ? "#f59e0b" : colors.border, backgroundColor: recipeForm.isSpecial ? "#f59e0b" : "transparent" }]}>
+                {recipeForm.isSpecial && <Text style={{ color: "#fff", fontSize: 13, fontWeight: "800" }}>⭐</Text>}
+              </View>
+              <View style={{ flex: 1 }}>
+                <Text style={[styles.specialToggleTitle, { color: recipeForm.isSpecial ? "#b45309" : colors.foreground }]}>
+                  {recipeForm.isSpecial ? "Marked as Weekly Special" : "Mark as Weekly Special"}
+                </Text>
+                <Text style={[styles.specialToggleSub, { color: colors.mutedForeground }]}>
+                  Highlights this recipe in the Prep Plan for easy weekly special prep
+                </Text>
+              </View>
+            </TouchableOpacity>
+            {recipeForm.isSpecial && (
+              <>
+                <Text style={[styles.label, { color: colors.mutedForeground }]}>SPECIAL LABEL (optional)</Text>
+                <TextInput
+                  style={[styles.input, { borderColor: "#f59e0b", color: colors.foreground, backgroundColor: colors.card }]}
+                  placeholder="e.g. Weekend Special · Taco Tuesday · Chef's Feature"
+                  placeholderTextColor={colors.mutedForeground}
+                  value={recipeForm.specialLabel}
+                  onChangeText={(v) => setRecipeForm((f) => ({ ...f, specialLabel: v }))}
+                />
+              </>
+            )}
 
             {/* Ingredients */}
             <View style={styles.ingHeader}>
@@ -1377,6 +1499,10 @@ const styles = StyleSheet.create({
   checkboxTick: { color: "#fff", fontSize: 14, fontWeight: "800" },
   checkName: { fontSize: 15, fontWeight: "600" },
   checkMeta: { fontSize: 12, marginTop: 2 },
+  specialToggle: { flexDirection: "row", alignItems: "center", gap: 12, borderWidth: 1.5, borderRadius: 12, padding: 14 },
+  specialToggleCheck: { width: 30, height: 30, borderRadius: 8, borderWidth: 2, justifyContent: "center", alignItems: "center" },
+  specialToggleTitle: { fontSize: 15, fontWeight: "600" },
+  specialToggleSub: { fontSize: 12, marginTop: 2 },
   // Cost Calculator
   costIngRow: { borderRadius: 12, borderWidth: 1, padding: 14, flexDirection: "row", alignItems: "center", gap: 12 },
   costIngRight: { alignItems: "flex-end", gap: 6 },
