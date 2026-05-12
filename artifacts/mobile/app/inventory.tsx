@@ -36,6 +36,7 @@ type InventoryItem = {
   currentStock: string;
   parLevel: string;
   unit: string;
+  unitsPerCase: string;
   location: string;
   lastCounted: string;
   cost: string;
@@ -66,19 +67,19 @@ export default function InventoryScreen() {
   const [filterStatus, setFilterStatus] = useState<"all" | "ok" | "low" | "critical">("all");
   const [form, setForm] = useState({
     name: "", category: "Produce", currentStock: "", parLevel: "",
-    unit: "each", location: "Dry Storage", cost: "",
+    unit: "each", unitsPerCase: "", location: "Dry Storage", cost: "",
   });
 
   if (!loaded) return null;
 
   function resetForm() {
-    setForm({ name: "", category: "Produce", currentStock: "", parLevel: "", unit: "each", location: "Dry Storage", cost: "" });
+    setForm({ name: "", category: "Produce", currentStock: "", parLevel: "", unit: "each", unitsPerCase: "", location: "Dry Storage", cost: "" });
     setEditItem(null);
   }
 
   function openEdit(item: InventoryItem) {
     setEditItem(item);
-    setForm({ name: item.name, category: item.category, currentStock: item.currentStock, parLevel: item.parLevel, unit: item.unit, location: item.location, cost: item.cost });
+    setForm({ name: item.name, category: item.category, currentStock: item.currentStock, parLevel: item.parLevel, unit: item.unit, unitsPerCase: item.unitsPerCase ?? "", location: item.location, cost: item.cost });
     setModalVisible(true);
   }
 
@@ -181,8 +182,12 @@ export default function InventoryScreen() {
                   "Current Stock": i.currentStock,
                   "Par Level": i.parLevel,
                   Unit: i.unit,
+                  "Units Per Case": i.unitsPerCase || "",
                   Location: i.location,
                   "Cost Per Unit ($)": i.cost,
+                  "Cost Per Case ($)": i.unitsPerCase && i.cost
+                    ? (parseFloat(i.unitsPerCase) * parseFloat(i.cost)).toFixed(2)
+                    : "",
                   Status: STATUS_LABEL[stockStatus(i)],
                   "Last Counted": i.lastCounted,
                 }))
@@ -216,7 +221,7 @@ export default function InventoryScreen() {
                     {item.category} · {item.location}
                   </Text>
                   <Text style={[styles.cardSub, { color: colors.mutedForeground }]}>
-                    Stock: {item.currentStock} {item.unit} · Par: {item.parLevel || "—"} · Counted: {item.lastCounted}
+                    Stock: {item.currentStock} {item.unit} · Par: {item.parLevel || "—"}{item.unitsPerCase ? ` · ${item.unitsPerCase}/case` : ""} · Counted: {item.lastCounted}
                   </Text>
                 </View>
                 <View style={[styles.statusBadge, { backgroundColor: statusColor + "20" }]}>
@@ -274,6 +279,16 @@ export default function InventoryScreen() {
                 </TouchableOpacity>
               ))}
             </View>
+
+            <Text style={[styles.label, { color: colors.mutedForeground }]}>UNITS PER CASE</Text>
+            <TextInput
+              style={[styles.input, { borderColor: colors.border, color: colors.foreground, backgroundColor: colors.card }]}
+              placeholder="e.g. 12 (leave blank if sold individually)"
+              placeholderTextColor={colors.mutedForeground}
+              value={form.unitsPerCase}
+              onChangeText={(v) => setForm((f) => ({ ...f, unitsPerCase: v }))}
+              keyboardType="decimal-pad"
+            />
 
             <Text style={[styles.label, { color: colors.mutedForeground }]}>STORAGE LOCATION</Text>
             <View style={styles.chipGroup}>
