@@ -57,9 +57,16 @@ function stockStatus(item: InventoryItem): "ok" | "low" | "critical" {
 const STATUS_COLOR = { ok: "#10b981", low: "#f59e0b", critical: "#ef4444" };
 const STATUS_LABEL = { ok: "OK", low: "Low", critical: "Critical" };
 
+type PriceSyncEntry = {
+  id: string; item: string; distributor: string; category: string;
+  unit: string; currentPrice: string; previousPrice: string;
+  lastUpdated: string; sku: string; notes: string;
+};
+
 export default function InventoryScreen() {
   const colors = useColors();
   const [items, setItems, loaded] = useStorage<InventoryItem[]>("inventory_items", []);
+  const [pricingItems, setPricingItems] = useStorage<PriceSyncEntry[]>("pricing_items", []);
   const [modalVisible, setModalVisible] = useState(false);
   const [editItem, setEditItem] = useState<InventoryItem | null>(null);
   const [search, setSearch] = useState("");
@@ -101,6 +108,39 @@ export default function InventoryScreen() {
     }
     setModalVisible(false);
     resetForm();
+
+    // Auto-sync cost to Distributor Pricing
+    if (form.cost.trim()) {
+      const name = form.name.trim();
+      setPricingItems((prev) => {
+        const existing = prev.find((p) => p.item.toLowerCase() === name.toLowerCase());
+        if (existing) {
+          if (existing.currentPrice !== form.cost) {
+            return prev.map((p) =>
+              p.id === existing.id
+                ? { ...p, previousPrice: p.currentPrice, currentPrice: form.cost, lastUpdated: new Date().toLocaleDateString() }
+                : p
+            );
+          }
+          return prev;
+        }
+        return [
+          {
+            id: `inv_${Date.now()}`,
+            item: name,
+            distributor: "",
+            category: form.category,
+            unit: form.unit,
+            currentPrice: form.cost,
+            previousPrice: "",
+            lastUpdated: new Date().toLocaleDateString(),
+            sku: "",
+            notes: "Synced from Inventory",
+          },
+          ...prev,
+        ];
+      });
+    }
   }
 
   function deleteItem(id: string) {
