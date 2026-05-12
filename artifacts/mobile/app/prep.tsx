@@ -34,7 +34,23 @@ type Recipe = {
   ingredients: RecipeIngredient[];
 };
 
-type InventoryRef = { id: string; name: string; currentStock: string; unit: string };
+type InventoryRef = { id: string; name: string; currentStock: string; unit: string; cost: string };
+
+type CostLine = {
+  ingredient: RecipeIngredient;
+  invCost: string | null;
+  effectiveCost: string;
+  lineCost: number;
+  isLinked: boolean;
+};
+
+type IngCalc = {
+  ingredient: RecipeIngredient;
+  needed: number;
+  onHand: number | null;
+  maxBatches: number | null;
+  isLinked: boolean;
+};
 
 // ─── Constants ────────────────────────────────────────────────────────────────
 
@@ -58,7 +74,7 @@ export default function PrepScreen() {
   const [recipes, setRecipes, loaded] = useStorage<Recipe[]>("recipes", []);
   const [inventory] = useStorage<InventoryRef[]>("inventory_items", []);
 
-  const [tab, setTab] = useState<"recipes" | "batch" | "plan">("recipes");
+  const [tab, setTab] = useState<"recipes" | "batch" | "plan" | "cost">("recipes");
   const [filterCat, setFilterCat] = useState("All");
   const [search, setSearch] = useState("");
 
@@ -84,6 +100,14 @@ export default function PrepScreen() {
   // Daily Prep Plan
   const [planBatches, setPlanBatches] = useStorage<Record<string, string>>("daily_prep_batches", {});
   const [planChecked, setPlanChecked] = useStorage<Record<string, boolean>>("daily_prep_checked", {});
+
+  // Cost Calculator
+  const [costRecipeId, setCostRecipeId] = useState<string | null>(null);
+  const [costServings, setCostServings] = useState("1");
+  const [costPct, setCostPct] = useState("28");
+  const [costSalePrice, setCostSalePrice] = useState("");
+  const [costMode, setCostMode] = useState<"pct" | "price">("pct");
+  const [costOverrides, setCostOverrides] = useState<Record<string, string>>({});
 
   if (!loaded) return null;
 
@@ -150,18 +174,39 @@ export default function PrepScreen() {
     setIngredients((prev) => prev.filter((i) => i.id !== id));
   }
 
+  // ── Cost Calculator logic ─────────────────────────────────────────────
+
+  const costRecipe = recipes.find((r) => r.id === costRecipeId) ?? null;
+
+  const costLines: CostLine[] = costRecipe
+    ? costRecipe.ingredients.map((ing) => {
+        const inv = inventory.find((i) => i.name.toLowerCase() === ing.name.toLowerCase());
+        const invCost = inv?.cost ?? null;
+        const override = costOverrides[ing.name];
+        const effectiveCost = override !== undefined ? override : (invCost ?? "");
+        const lineCost = (parseFloat(ing.quantity) || 0) * (parseFloat(effectiveCost) || 0);
+        return { ingredient: ing, invCost, effectiveCost, lineCost, isLinked: !!inv };
+      })
+    : [];
+
+  const totalIngCost = costLines.reduce((s, l) => s + l.lineCost, 0);
+  const costServingsNum = Math.max(1, parseFloat(costServings) || 1);
+  const costPerServing = totalIngCost / costServingsNum;
+  const costPctNum = parseFloat(costPct) || 0;
+  const costSalePriceNum = parseFloat(costSalePrice) || 0;
+  const solvedPrice = costMode === "pct" && costPctNum > 0 ? costPerServing / (costPctNum / 100) : 0;
+  const solvedPct = costMode === "price" && costSalePriceNum > 0 ? (costPerServing / costSalePriceNum) * 100 : 0;
+  const displayPrice = costMode === "pct" ? solvedPrice : costSalePriceNum;
+  const displayPct = costMode === "price" ? solvedPct : costPctNum;
+  const grossProfit = displayPrice - costPerServing;
+  const profitMargin = displayPrice > 0 ? (grossProfit / displayPrice) * 100 : 0;
+  const linkedCostCount = costLines.filter((l) => l.isLinked).length;
+
   // ── Batch calc ────────────────────────────────────────────────────────
 
   const batchRecipe = recipes.find((r) => r.id === batchRecipeId) ?? null;
   const multiplier = Math.max(1, parseFloat(batchMultiplier) || 1);
 
-  type IngCalc = {
-    ingredient: RecipeIngredient;
-    needed: number;
-    onHand: number | null;
-    maxBatches: number | null;
-    isLinked: boolean;
-  };
 
   const ingCalcs: IngCalc[] = batchRecipe
     ? batchRecipe.ingredients.map((ing) => {
@@ -244,10 +289,10 @@ export default function PrepScreen() {
     <SafeAreaView style={[styles.safe, { backgroundColor: colors.background }]} edges={["bottom"]}>
       {/* Tab bar */}
       <View style={[styles.tabBar, { borderBottomColor: colors.border }]}>
-        {(["recipes", "batch", "plan"] as const).map((t) => (
+        {(["recipes", "batch", "plan", "cost"] as const).map((t) => (
           <TouchableOpacity key={t} style={[styles.tabBtn, tab === t && { borderBottomColor: "#16a34a", borderBottomWidth: 2.5 }]} onPress={() => setTab(t)}>
             <Text style={[styles.tabText, { color: tab === t ? "#16a34a" : colors.mutedForeground }]}>
-              {t === "recipes" ? "📖 Recipes" : t === "batch" ? "⚖ Batch" : "📋 Daily Plan"}
+              {t === "recipes" ? "📖 Book" : t === "batch" ? "⚖ Batch" : t === "plan" ? "📋 Plan" : "💰 Cost"}
             </Text>
           </TouchableOpacity>
         ))}
@@ -658,6 +703,226 @@ export default function PrepScreen() {
                 Use the + buttons above to set how many batches of each recipe you need today. The pull list and checklist will appear here.
               </Text>
             </View>
+          )}
+
+          <View style={{ height: 60 }} />
+        </ScrollView>
+      )}
+
+      {/* ── COST CALCULATOR TAB ──────────────────────────────────────────── */}
+      {tab === "cost" && (
+        <ScrollView contentContainerStyle={styles.content} keyboardShouldPersistTaps="handled">
+          <View style={[styles.infoBox, { backgroundColor: "#f59e0b12", borderColor: "#f59e0b40" }]}>
+            <Text style={[styles.infoText, { color: "#b45309" }]}>
+              Select a recipe to break down ingredient costs. Costs are pulled from your Inventory — you can override any line manually. Ingredient names must match inventory exactly.
+            </Text>
+          </View>
+
+          {/* Recipe picker */}
+          <Text style={[styles.sectionLabel, { color: colors.mutedForeground }]}>SELECT RECIPE</Text>
+          {recipes.length === 0 ? (
+            <View style={[styles.emptyCard, { backgroundColor: colors.card, borderColor: colors.border }]}>
+              <Text style={[styles.emptyText, { color: colors.mutedForeground, textAlign: "center" }]}>No recipes yet. Add one in the 📖 Book tab.</Text>
+            </View>
+          ) : (
+            <ScrollView horizontal showsHorizontalScrollIndicator={false} contentContainerStyle={styles.recipePickerRow}>
+              {recipes.map((r) => {
+                const isSel = r.id === costRecipeId;
+                const catColor = CAT_COLORS[r.category] ?? "#6b7280";
+                return (
+                  <TouchableOpacity
+                    key={r.id}
+                    style={[styles.recipeChip, { borderColor: isSel ? "#f59e0b" : colors.border, backgroundColor: isSel ? "#f59e0b" : colors.card }]}
+                    onPress={() => {
+                      setCostRecipeId(r.id);
+                      setCostOverrides({});
+                      if (r.servings) setCostServings(r.servings);
+                    }}
+                  >
+                    <Text style={[styles.recipeChipText, { color: isSel ? "#fff" : colors.foreground }]}>{r.name}</Text>
+                    <Text style={[styles.recipeChipSub, { color: isSel ? "#ffffffaa" : colors.mutedForeground }]}>{r.category}</Text>
+                  </TouchableOpacity>
+                );
+              })}
+            </ScrollView>
+          )}
+
+          {costRecipe && (
+            <>
+              {/* Servings */}
+              <View style={styles.multiplierRow}>
+                <Text style={[styles.sectionLabel, { color: colors.mutedForeground, marginTop: 0 }]}>SERVINGS / PORTIONS</Text>
+                <View style={styles.multiplierControl}>
+                  <TouchableOpacity style={[styles.multBtn, { backgroundColor: colors.card, borderColor: colors.border }]} onPress={() => setCostServings((v) => String(Math.max(1, (parseFloat(v) || 1) - 1)))}>
+                    <Text style={[styles.multBtnText, { color: colors.foreground }]}>−</Text>
+                  </TouchableOpacity>
+                  <TextInput
+                    style={[styles.multInput, { borderColor: colors.border, color: colors.foreground, backgroundColor: colors.card }]}
+                    value={costServings}
+                    onChangeText={setCostServings}
+                    keyboardType="decimal-pad"
+                  />
+                  <TouchableOpacity style={[styles.multBtn, { backgroundColor: colors.card, borderColor: colors.border }]} onPress={() => setCostServings((v) => String((parseFloat(v) || 1) + 1))}>
+                    <Text style={[styles.multBtnText, { color: colors.foreground }]}>+</Text>
+                  </TouchableOpacity>
+                </View>
+              </View>
+
+              {/* Ingredient cost breakdown */}
+              <Text style={[styles.sectionLabel, { color: colors.mutedForeground }]}>
+                INGREDIENT COSTS ({linkedCostCount}/{costLines.length} linked to inventory)
+              </Text>
+
+              {costLines.length === 0 ? (
+                <View style={[styles.emptyCard, { backgroundColor: colors.card, borderColor: colors.border }]}>
+                  <Text style={[styles.emptyText, { color: colors.mutedForeground, textAlign: "center" }]}>No ingredients on this recipe. Edit the recipe in the 📖 Book tab to add ingredients.</Text>
+                </View>
+              ) : (
+                costLines.map(({ ingredient, invCost, effectiveCost, lineCost, isLinked }) => (
+                  <View key={ingredient.id} style={[styles.costIngRow, { backgroundColor: colors.card, borderColor: isLinked ? colors.border : "#f59e0b50" }]}>
+                    <View style={{ flex: 1 }}>
+                      <Text style={[styles.ingName, { color: colors.foreground }]}>{ingredient.name}</Text>
+                      <Text style={[styles.ingMeta, { color: colors.mutedForeground }]}>
+                        {ingredient.quantity} {ingredient.unit}
+                        {isLinked
+                          ? invCost && parseFloat(invCost) > 0
+                            ? `  ·  Inv cost: $${parseFloat(invCost).toFixed(3)}/${ingredient.unit}`
+                            : "  ·  Linked (no cost set)"
+                          : "  ·  ⚠ Not in inventory"}
+                      </Text>
+                    </View>
+                    <View style={styles.costIngRight}>
+                      <View style={[styles.costInputWrap, { borderColor: colors.border, backgroundColor: colors.background }]}>
+                        <Text style={[styles.costDollar, { color: colors.mutedForeground }]}>$</Text>
+                        <TextInput
+                          style={[styles.costInput, { color: colors.foreground }]}
+                          value={effectiveCost}
+                          onChangeText={(v) => setCostOverrides((prev) => ({ ...prev, [ingredient.name]: v }))}
+                          keyboardType="decimal-pad"
+                          placeholder="0.00"
+                          placeholderTextColor={colors.mutedForeground}
+                        />
+                        <Text style={[styles.costUnit, { color: colors.mutedForeground }]}>/{ingredient.unit}</Text>
+                      </View>
+                      <Text style={[styles.costLineTotal, { color: lineCost > 0 ? colors.foreground : colors.mutedForeground }]}>
+                        ${lineCost.toFixed(2)}
+                      </Text>
+                    </View>
+                  </View>
+                ))
+              )}
+
+              {/* Total cost summary */}
+              {costLines.length > 0 && (
+                <View style={[styles.costTotalRow, { backgroundColor: colors.card, borderColor: colors.border }]}>
+                  <View>
+                    <Text style={[styles.costTotalLabel, { color: colors.mutedForeground }]}>TOTAL INGREDIENT COST</Text>
+                    <Text style={[styles.costTotalValue, { color: colors.foreground }]}>${totalIngCost.toFixed(2)}</Text>
+                  </View>
+                  <View style={{ alignItems: "flex-end" }}>
+                    <Text style={[styles.costTotalLabel, { color: colors.mutedForeground }]}>COST PER SERVING</Text>
+                    <Text style={[styles.costTotalValue, { color: "#f59e0b" }]}>${costPerServing.toFixed(2)}</Text>
+                  </View>
+                </View>
+              )}
+
+              {/* Pricing calculator */}
+              <Text style={[styles.sectionLabel, { color: colors.mutedForeground }]}>PRICING CALCULATOR</Text>
+
+              {/* Mode toggle */}
+              <View style={[styles.costModeRow, { backgroundColor: colors.card, borderColor: colors.border }]}>
+                <TouchableOpacity
+                  style={[styles.costModeBtn, costMode === "pct" && { backgroundColor: "#f59e0b" }]}
+                  onPress={() => setCostMode("pct")}
+                >
+                  <Text style={[styles.costModeBtnText, { color: costMode === "pct" ? "#fff" : colors.foreground }]}>Set Food Cost %</Text>
+                  <Text style={[styles.costModeSub, { color: costMode === "pct" ? "#ffffffaa" : colors.mutedForeground }]}>→ solve for sale price</Text>
+                </TouchableOpacity>
+                <TouchableOpacity
+                  style={[styles.costModeBtn, costMode === "price" && { backgroundColor: "#f59e0b" }]}
+                  onPress={() => setCostMode("price")}
+                >
+                  <Text style={[styles.costModeBtnText, { color: costMode === "price" ? "#fff" : colors.foreground }]}>Set Sale Price</Text>
+                  <Text style={[styles.costModeSub, { color: costMode === "price" ? "#ffffffaa" : colors.mutedForeground }]}>→ solve for food cost %</Text>
+                </TouchableOpacity>
+              </View>
+
+              {costMode === "pct" ? (
+                <View style={[styles.costInputCard, { backgroundColor: colors.card, borderColor: colors.border }]}>
+                  <Text style={[styles.costInputLabel, { color: colors.mutedForeground }]}>TARGET FOOD COST %</Text>
+                  <View style={styles.costPctRow}>
+                    {["20", "25", "28", "30", "33"].map((p) => (
+                      <TouchableOpacity
+                        key={p}
+                        style={[styles.costPctChip, { borderColor: costPct === p ? "#f59e0b" : colors.border, backgroundColor: costPct === p ? "#f59e0b" : colors.card }]}
+                        onPress={() => setCostPct(p)}
+                      >
+                        <Text style={[styles.costPctChipText, { color: costPct === p ? "#fff" : colors.foreground }]}>{p}%</Text>
+                      </TouchableOpacity>
+                    ))}
+                    <View style={[styles.costPctCustom, { borderColor: colors.border, backgroundColor: colors.background }]}>
+                      <TextInput
+                        style={[styles.costPctInput, { color: colors.foreground }]}
+                        value={costPct}
+                        onChangeText={setCostPct}
+                        keyboardType="decimal-pad"
+                        placeholder="28"
+                        placeholderTextColor={colors.mutedForeground}
+                      />
+                      <Text style={[styles.costUnit, { color: colors.mutedForeground }]}>%</Text>
+                    </View>
+                  </View>
+                  <Text style={[styles.costSolvedLabel, { color: colors.mutedForeground }]}>RECOMMENDED SALE PRICE</Text>
+                  <Text style={[styles.costSolvedValue, { color: "#16a34a" }]}>
+                    {solvedPrice > 0 ? `$${solvedPrice.toFixed(2)}` : "—"}
+                  </Text>
+                </View>
+              ) : (
+                <View style={[styles.costInputCard, { backgroundColor: colors.card, borderColor: colors.border }]}>
+                  <Text style={[styles.costInputLabel, { color: colors.mutedForeground }]}>SALE PRICE</Text>
+                  <View style={[styles.costInputWrap, { borderColor: colors.border, backgroundColor: colors.background, padding: 12 }]}>
+                    <Text style={[styles.costDollar, { color: colors.mutedForeground, fontSize: 20 }]}>$</Text>
+                    <TextInput
+                      style={[styles.costInput, { color: colors.foreground, fontSize: 20, fontWeight: "700" }]}
+                      value={costSalePrice}
+                      onChangeText={setCostSalePrice}
+                      keyboardType="decimal-pad"
+                      placeholder="0.00"
+                      placeholderTextColor={colors.mutedForeground}
+                      autoFocus
+                    />
+                  </View>
+                  <Text style={[styles.costSolvedLabel, { color: colors.mutedForeground }]}>FOOD COST %</Text>
+                  <Text style={[styles.costSolvedValue, {
+                    color: solvedPct === 0 ? colors.mutedForeground : solvedPct <= 28 ? "#16a34a" : solvedPct <= 33 ? "#f59e0b" : "#ef4444"
+                  }]}>
+                    {solvedPct > 0 ? `${solvedPct.toFixed(1)}%` : "—"}
+                  </Text>
+                </View>
+              )}
+
+              {/* Summary card */}
+              {displayPrice > 0 && (
+                <View style={[styles.costSummaryCard, { borderColor: "#16a34a50", backgroundColor: "#16a34a08" }]}>
+                  <Text style={[styles.sectionLabel, { color: "#16a34a", marginBottom: 12 }]}>SUMMARY — {costRecipe.name}</Text>
+                  {[
+                    { label: "Total ingredient cost", value: `$${totalIngCost.toFixed(2)}` },
+                    { label: `Cost per serving (÷${costServingsNum})`, value: `$${costPerServing.toFixed(2)}` },
+                    { label: "Sale price", value: `$${displayPrice.toFixed(2)}`, highlight: true },
+                    { label: "Food cost %", value: `${displayPct.toFixed(1)}%`, color: displayPct <= 28 ? "#16a34a" : displayPct <= 33 ? "#f59e0b" : "#ef4444" },
+                    { label: "Gross profit / serving", value: `$${grossProfit.toFixed(2)}`, color: grossProfit >= 0 ? "#16a34a" : "#ef4444" },
+                    { label: "Profit margin", value: `${profitMargin.toFixed(1)}%`, color: profitMargin >= 60 ? "#16a34a" : profitMargin >= 50 ? "#f59e0b" : "#ef4444" },
+                  ].map(({ label, value, highlight, color }) => (
+                    <View key={label} style={[styles.costSummaryRow, { borderTopColor: colors.border }]}>
+                      <Text style={[styles.costSummaryLabel, { color: colors.mutedForeground }]}>{label}</Text>
+                      <Text style={[styles.costSummaryValue, { color: color ?? (highlight ? colors.foreground : colors.foreground), fontWeight: highlight ? "800" : "600", fontSize: highlight ? 17 : 15 }]}>
+                        {value}
+                      </Text>
+                    </View>
+                  ))}
+                </View>
+              )}
+            </>
           )}
 
           <View style={{ height: 60 }} />
@@ -1112,4 +1377,32 @@ const styles = StyleSheet.create({
   checkboxTick: { color: "#fff", fontSize: 14, fontWeight: "800" },
   checkName: { fontSize: 15, fontWeight: "600" },
   checkMeta: { fontSize: 12, marginTop: 2 },
+  // Cost Calculator
+  costIngRow: { borderRadius: 12, borderWidth: 1, padding: 14, flexDirection: "row", alignItems: "center", gap: 12 },
+  costIngRight: { alignItems: "flex-end", gap: 6 },
+  costInputWrap: { flexDirection: "row", alignItems: "center", borderWidth: 1, borderRadius: 8, paddingHorizontal: 8, paddingVertical: 6, gap: 2 },
+  costDollar: { fontSize: 14, fontWeight: "600" },
+  costInput: { fontSize: 14, fontWeight: "700", minWidth: 50, textAlign: "right" },
+  costUnit: { fontSize: 11, fontWeight: "500" },
+  costLineTotal: { fontSize: 15, fontWeight: "800" },
+  costTotalRow: { borderRadius: 12, borderWidth: 1, padding: 16, flexDirection: "row", justifyContent: "space-between", alignItems: "center" },
+  costTotalLabel: { fontSize: 10, fontWeight: "700", letterSpacing: 0.5 },
+  costTotalValue: { fontSize: 22, fontWeight: "800", marginTop: 2 },
+  costModeRow: { flexDirection: "row", borderWidth: 1, borderRadius: 12, overflow: "hidden" },
+  costModeBtn: { flex: 1, padding: 14, alignItems: "center", gap: 2 },
+  costModeBtnText: { fontSize: 13, fontWeight: "700" },
+  costModeSub: { fontSize: 11 },
+  costInputCard: { borderRadius: 12, borderWidth: 1, padding: 16, gap: 10 },
+  costInputLabel: { fontSize: 10, fontWeight: "700", letterSpacing: 0.5 },
+  costPctRow: { flexDirection: "row", flexWrap: "wrap", gap: 8, alignItems: "center" },
+  costPctChip: { borderWidth: 1.5, borderRadius: 8, paddingHorizontal: 13, paddingVertical: 7 },
+  costPctChipText: { fontSize: 14, fontWeight: "700" },
+  costPctCustom: { flexDirection: "row", alignItems: "center", borderWidth: 1, borderRadius: 8, paddingHorizontal: 10, paddingVertical: 7, gap: 2 },
+  costPctInput: { fontSize: 14, fontWeight: "700", width: 40, textAlign: "center" },
+  costSolvedLabel: { fontSize: 10, fontWeight: "700", letterSpacing: 0.5 },
+  costSolvedValue: { fontSize: 32, fontWeight: "800" },
+  costSummaryCard: { borderRadius: 14, borderWidth: 1.5, padding: 16 },
+  costSummaryRow: { flexDirection: "row", justifyContent: "space-between", alignItems: "center", paddingVertical: 9, borderTopWidth: 1 },
+  costSummaryLabel: { fontSize: 13 },
+  costSummaryValue: { fontSize: 15, fontWeight: "600" },
 });
