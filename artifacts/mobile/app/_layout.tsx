@@ -15,7 +15,6 @@ import { SafeAreaProvider } from "react-native-safe-area-context";
 
 import { ErrorBoundary } from "@/components/ErrorBoundary";
 
-// Prevent the splash screen from auto-hiding before asset loading is complete.
 SplashScreen.preventAutoHideAsync();
 
 const queryClient = new QueryClient();
@@ -24,6 +23,13 @@ function RootLayoutNav() {
   return (
     <Stack screenOptions={{ headerBackTitle: "Back" }}>
       <Stack.Screen name="(tabs)" options={{ headerShown: false }} />
+      <Stack.Screen name="walkthroughs" options={{ title: "Walkthroughs" }} />
+      <Stack.Screen name="waste" options={{ title: "Waste Management" }} />
+      <Stack.Screen name="pricing" options={{ title: "Distributor Pricing" }} />
+      <Stack.Screen name="sales" options={{ title: "Kitchen Sales" }} />
+      <Stack.Screen name="inventory" options={{ title: "Inventory" }} />
+      <Stack.Screen name="ordering" options={{ title: "Ordering" }} />
+      <Stack.Screen name="reports" options={{ title: "Reports" }} />
     </Stack>
   );
 }
