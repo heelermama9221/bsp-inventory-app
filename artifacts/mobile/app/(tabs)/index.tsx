@@ -124,6 +124,14 @@ const MODES = [
     color: "#0891b2",
     route: "/linecheck",
   },
+  {
+    id: "receiving",
+    title: "Receiving Hub",
+    description: "Single SKU check-in & full invoice entry",
+    icon: "📥",
+    color: "#10b981",
+    route: "/receiving",
+  },
 ];
 
 export default function DashboardScreen() {
