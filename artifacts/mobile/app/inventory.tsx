@@ -14,6 +14,7 @@ import * as DocumentPicker from "expo-document-picker";
 import { useColors } from "@/hooks/useColors";
 import { useStorage } from "@/hooks/useStorage";
 import { exportToCsv } from "@/utils/exportCsv";
+import { INVENTORY_SEED } from "../data/inventory-seed";
 
 // ── CSV import helpers ────────────────────────────────────────────────────────
 
@@ -403,6 +404,31 @@ export default function InventoryScreen() {
         {filtered.length === 0 && (
           <View style={styles.empty}>
             <Text style={[styles.emptyText, { color: colors.mutedForeground }]}>No inventory items yet.</Text>
+            {items.length === 0 && (
+              <>
+                <Text style={[styles.emptyText, { color: colors.mutedForeground, fontSize: 13, marginTop: 6 }]}>
+                  Tap below to load your master inventory list.
+                </Text>
+                <TouchableOpacity
+                  style={[styles.seedBtn, { backgroundColor: colors.primary }]}
+                  onPress={() => {
+                    Alert.alert(
+                      "Load Master Inventory",
+                      `This will load all ${INVENTORY_SEED.length} items from your master inventory list. Continue?`,
+                      [
+                        { text: "Cancel", style: "cancel" },
+                        {
+                          text: "Load",
+                          onPress: () => setItems(INVENTORY_SEED),
+                        },
+                      ]
+                    );
+                  }}
+                >
+                  <Text style={styles.seedBtnText}>📋 Load Master Inventory ({INVENTORY_SEED.length} items)</Text>
+                </TouchableOpacity>
+              </>
+            )}
           </View>
         )}
 
@@ -846,8 +872,10 @@ const styles = StyleSheet.create({
   importPreviewRight: { alignItems: "flex-end", gap: 2 },
   importPreviewStock: { fontSize: 14, fontWeight: "700" },
   importPreviewPar: { fontSize: 12 },
-  empty: { alignItems: "center", paddingTop: 40 },
+  empty: { alignItems: "center", paddingTop: 40, paddingHorizontal: 24 },
   emptyText: { fontSize: 15 },
+  seedBtn: { marginTop: 16, borderRadius: 10, paddingVertical: 14, paddingHorizontal: 20 },
+  seedBtnText: { color: "#fff", fontSize: 15, fontWeight: "700", textAlign: "center" },
   card: { borderRadius: 10, borderWidth: 1, padding: 14 },
   cardRow: { flexDirection: "row", alignItems: "center", gap: 12 },
   cardTitle: { fontSize: 15, fontWeight: "600" },
