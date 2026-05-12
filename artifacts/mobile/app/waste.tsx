@@ -26,6 +26,8 @@ type WasteEntry = {
   recordedBy: string;
 };
 
+type InventoryRef = { id: string; name: string; currentStock: string; unit: string };
+
 const CATEGORIES = ["Produce", "Protein", "Dairy", "Dry Goods", "Prepared", "Other"];
 const REASONS = ["Spoilage", "Over-prep", "Dropped / Spilled", "Expired", "Wrong Order", "Quality Reject", "Other"];
 const UNITS = ["lbs", "oz", "each", "portion", "batch", "case", "gallon"];
@@ -33,6 +35,7 @@ const UNITS = ["lbs", "oz", "each", "portion", "batch", "case", "gallon"];
 export default function WasteScreen() {
   const colors = useColors();
   const [entries, setEntries, loaded] = useStorage<WasteEntry[]>("waste_entries", []);
+  const [inventoryItems, setInventoryItems] = useStorage<InventoryRef[]>("inventory_items", []);
   const [modalVisible, setModalVisible] = useState(false);
   const [filterCat, setFilterCat] = useState("All");
   const [form, setForm] = useState({
@@ -64,6 +67,25 @@ export default function WasteScreen() {
       recordedBy: form.recordedBy.trim(),
     };
     setEntries((prev) => [entry, ...prev]);
+
+    // Deduct from inventory if a matching item exists (same name, case-insensitive)
+    const wasteQty = parseFloat(form.quantity) || 0;
+    const match = inventoryItems.find(
+      (inv) => inv.name.toLowerCase() === form.item.trim().toLowerCase()
+    );
+    if (match && wasteQty > 0) {
+      const currentStock = parseFloat(match.currentStock) || 0;
+      const newStock = Math.max(0, currentStock - wasteQty).toString();
+      setInventoryItems((prev) =>
+        prev.map((inv) => inv.id === match.id ? { ...inv, currentStock: newStock } : inv)
+      );
+      Alert.alert(
+        "Inventory Updated",
+        `${match.name} on-hand adjusted from ${currentStock} to ${newStock} ${match.unit}.`,
+        [{ text: "OK" }]
+      );
+    }
+
     setModalVisible(false);
     resetForm();
   }
@@ -184,7 +206,29 @@ export default function WasteScreen() {
           </View>
           <ScrollView contentContainerStyle={styles.modalContent}>
             <Text style={[styles.label, { color: colors.mutedForeground }]}>ITEM NAME</Text>
-            <TextInput style={[styles.input, { borderColor: colors.border, color: colors.foreground, backgroundColor: colors.card }]} placeholder="e.g. Romaine Lettuce" placeholderTextColor={colors.mutedForeground} value={form.item} onChangeText={(v) => setForm((f) => ({ ...f, item: v }))} />
+            <TextInput style={[styles.input, { borderColor: colors.border, color: colors.foreground, backgroundColor: colors.card }]} placeholder="e.g. Romaine Lettuce" placeholderTextColor={colors.mutedForeground} value={form.item} onChangeText={(v) => setForm((f) => ({ ...f, item: v }))} autoFocus />
+            {(() => {
+              const match = inventoryItems.find(
+                (inv) => inv.name.toLowerCase() === form.item.trim().toLowerCase()
+              );
+              if (!form.item.trim()) return null;
+              if (match) {
+                return (
+                  <View style={[styles.invHint, { backgroundColor: "#10b98112", borderColor: "#10b98140" }]}>
+                    <Text style={[styles.invHintText, { color: "#10b981" }]}>
+                      ✓ Matches inventory · {parseFloat(match.currentStock) || 0} {match.unit} on hand — will be deducted on save
+                    </Text>
+                  </View>
+                );
+              }
+              return (
+                <View style={[styles.invHint, { backgroundColor: "#6b728012", borderColor: "#6b728030" }]}>
+                  <Text style={[styles.invHintText, { color: colors.mutedForeground }]}>
+                    No inventory match — waste will be logged but stock won't change
+                  </Text>
+                </View>
+              );
+            })()}
 
             <Text style={[styles.label, { color: colors.mutedForeground }]}>CATEGORY</Text>
             <View style={styles.chipGroup}>
@@ -252,6 +296,8 @@ const styles = StyleSheet.create({
   filterChipText: { fontSize: 13, fontWeight: "500" },
   empty: { alignItems: "center", paddingTop: 40 },
   emptyText: { fontSize: 15 },
+  invHint: { borderRadius: 8, borderWidth: 1, padding: 10, marginTop: 6 },
+  invHintText: { fontSize: 13, lineHeight: 18 },
   card: { borderRadius: 10, borderWidth: 1, padding: 14 },
   cardRow: { flexDirection: "row", alignItems: "flex-start", gap: 12 },
   cardTitle: { fontSize: 15, fontWeight: "600" },
