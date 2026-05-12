@@ -10,9 +10,56 @@ import {
   View,
 } from "react-native";
 import { SafeAreaView } from "react-native-safe-area-context";
+import * as DocumentPicker from "expo-document-picker";
 import { useColors } from "@/hooks/useColors";
 import { useStorage } from "@/hooks/useStorage";
 import { exportToCsv } from "@/utils/exportCsv";
+
+// ── CSV import helpers ────────────────────────────────────────────────────────
+
+function parseCSVText(text: string): Record<string, string>[] {
+  const lines = text.replace(/\r\n/g, "\n").replace(/\r/g, "\n").split("\n").filter((l) => l.trim());
+  if (lines.length < 2) return [];
+
+  function splitRow(row: string): string[] {
+    const cols: string[] = [];
+    let cur = "";
+    let inQ = false;
+    for (let i = 0; i < row.length; i++) {
+      const ch = row[i];
+      if (ch === '"') { inQ = !inQ; continue; }
+      if (ch === "," && !inQ) { cols.push(cur.trim()); cur = ""; continue; }
+      cur += ch;
+    }
+    cols.push(cur.trim());
+    return cols;
+  }
+
+  const headers = splitRow(lines[0]).map((h) => h.toLowerCase().replace(/[^a-z0-9 ]/g, "").trim());
+  const COL: Record<string, string> = {
+    "name": "name", "item": "name", "item name": "name", "product": "name", "product name": "name",
+    "category": "category", "cat": "category", "type": "category",
+    "current stock": "currentStock", "stock": "currentStock", "qty": "currentStock",
+    "quantity": "currentStock", "on hand": "currentStock", "onhand": "currentStock", "count": "currentStock",
+    "par level": "parLevel", "par": "parLevel", "minimum": "parLevel", "min": "parLevel", "min stock": "parLevel",
+    "unit": "unit", "uom": "unit", "unit of measure": "unit", "units": "unit",
+    "units per case": "unitsPerCase", "case size": "unitsPerCase", "pack size": "unitsPerCase",
+    "per case": "unitsPerCase", "unitscase": "unitsPerCase", "case qty": "unitsPerCase",
+    "location": "location", "storage": "location", "storage location": "location", "area": "location", "section": "location",
+    "cost": "cost", "price": "cost", "cost per unit": "cost", "unit cost": "cost",
+    "unit price": "cost", "cost per case": "cost",
+  };
+
+  return lines.slice(1).map((line) => {
+    const cols = splitRow(line);
+    const row: Record<string, string> = {};
+    headers.forEach((h, i) => {
+      const mapped = COL[h];
+      if (mapped) row[mapped] = (cols[i] ?? "").replace(/^\$/, "").trim();
+    });
+    return row;
+  });
+}
 
 // Bar & Service categories included here for ordering reference.
 // Alcohol sales are excluded from kitchen sales reports (see sales.tsx).
@@ -65,6 +112,11 @@ type PriceSyncEntry = {
 
 type WalkCount = { cases: string; loose: string };
 
+type ImportPreviewItem = {
+  name: string; category: string; currentStock: string; parLevel: string;
+  unit: string; unitsPerCase: string; location: string; cost: string;
+};
+
 export default function InventoryScreen() {
   const colors = useColors();
   const [items, setItems, loaded] = useStorage<InventoryItem[]>("inventory_items", []);
@@ -80,6 +132,10 @@ export default function InventoryScreen() {
   });
   const [walkVisible, setWalkVisible] = useState(false);
   const [walkCounts, setWalkCounts] = useState<Record<string, WalkCount>>({});
+  const [importVisible, setImportVisible] = useState(false);
+  const [importPreview, setImportPreview] = useState<ImportPreviewItem[]>([]);
+  const [importMode, setImportMode] = useState<"append" | "replace">("append");
+  const [importLoading, setImportLoading] = useState(false);
 
   if (!loaded) return null;
 
@@ -152,6 +208,66 @@ export default function InventoryScreen() {
       { text: "Cancel", style: "cancel" },
       { text: "Delete", style: "destructive", onPress: () => setItems((prev) => prev.filter((i) => i.id !== id)) },
     ]);
+  }
+
+  async function pickAndImport() {
+    try {
+      setImportLoading(true);
+      const result = await DocumentPicker.getDocumentAsync({
+        type: ["text/csv", "text/comma-separated-values", "text/plain", "application/vnd.ms-excel", "*/*"],
+        copyToCacheDirectory: true,
+      });
+      if (result.canceled || !result.assets?.length) { setImportLoading(false); return; }
+      const uri = result.assets[0].uri;
+      const text = await fetch(uri).then((r) => r.text());
+      const rows = parseCSVText(text);
+      const valid: ImportPreviewItem[] = rows
+        .filter((r) => r.name && r.name.trim())
+        .map((r) => ({
+          name: r.name?.trim() ?? "",
+          category: CATEGORIES.includes(r.category ?? "") ? r.category! : "Produce",
+          currentStock: r.currentStock ?? "",
+          parLevel: r.parLevel ?? "",
+          unit: r.unit ?? "each",
+          unitsPerCase: r.unitsPerCase ?? "",
+          location: LOCATIONS.includes(r.location ?? "") ? r.location! : (r.location?.trim() || "Dry Storage"),
+          cost: r.cost ?? "",
+        }));
+      if (valid.length === 0) {
+        Alert.alert("No Data Found", "Could not find any items in the file. Make sure the first row is a header row with a 'Name' or 'Item' column.");
+        setImportLoading(false);
+        return;
+      }
+      setImportPreview(valid);
+      setImportMode("append");
+      setImportVisible(true);
+    } catch (e) {
+      Alert.alert("Import Error", "Could not read that file. Please export your spreadsheet as CSV and try again.");
+    } finally {
+      setImportLoading(false);
+    }
+  }
+
+  function confirmImport() {
+    const today = new Date().toLocaleDateString();
+    const newItems: InventoryItem[] = importPreview.map((row) => ({
+      id: `imp_${Date.now()}_${Math.random().toString(36).slice(2)}`,
+      lastCounted: today,
+      ...row,
+    }));
+    if (importMode === "replace") {
+      setItems(newItems);
+    } else {
+      // Append: skip duplicates by name (case-insensitive)
+      setItems((prev) => {
+        const existingNames = new Set(prev.map((i) => i.name.toLowerCase()));
+        const toAdd = newItems.filter((i) => !existingNames.has(i.name.toLowerCase()));
+        return [...prev, ...toAdd];
+      });
+    }
+    setImportVisible(false);
+    setImportPreview([]);
+    Alert.alert("Import Complete", `${importMode === "replace" ? "Replaced all items with" : "Added"} ${importPreview.length} item${importPreview.length !== 1 ? "s" : ""} from your spreadsheet.`);
   }
 
   function openWalk() {
@@ -254,6 +370,9 @@ export default function InventoryScreen() {
           <TouchableOpacity style={[styles.walkBtn, { borderColor: "#ef4444" }]} onPress={openWalk}>
             <Text style={[styles.walkBtnText, { color: "#ef4444" }]}>🚶 Walk</Text>
           </TouchableOpacity>
+          <TouchableOpacity style={[styles.walkBtn, { borderColor: "#ef4444" }]} onPress={pickAndImport} disabled={importLoading}>
+            <Text style={[styles.walkBtnText, { color: "#ef4444" }]}>{importLoading ? "…" : "⬇ Import"}</Text>
+          </TouchableOpacity>
           <TouchableOpacity
             style={[styles.exportBtn, { borderColor: "#ef4444" }]}
             onPress={() =>
@@ -317,6 +436,75 @@ export default function InventoryScreen() {
         <Text style={[styles.hint, { color: colors.mutedForeground }]}>Tap to edit · Long press to delete</Text>
         <View style={{ height: 40 }} />
       </ScrollView>
+
+      {/* ── CSV Import Preview Modal ────────────────────────────────────── */}
+      <Modal visible={importVisible} animationType="slide" presentationStyle="pageSheet">
+        <SafeAreaView style={[styles.modalSafe, { backgroundColor: colors.background }]}>
+          <View style={[styles.modalHeader, { borderBottomColor: colors.border }]}>
+            <TouchableOpacity onPress={() => { setImportVisible(false); setImportPreview([]); }}>
+              <Text style={[styles.cancelBtn, { color: colors.destructive }]}>Cancel</Text>
+            </TouchableOpacity>
+            <Text style={[styles.modalTitle, { color: colors.foreground }]}>Import Preview</Text>
+            <TouchableOpacity onPress={confirmImport}>
+              <Text style={[styles.saveBtn, { color: "#ef4444" }]}>Import</Text>
+            </TouchableOpacity>
+          </View>
+
+          {/* Summary + mode picker */}
+          <View style={[styles.importSummary, { backgroundColor: "#ef444412", borderColor: "#ef444430" }]}>
+            <Text style={[styles.importSummaryTitle, { color: "#ef4444" }]}>
+              {importPreview.length} item{importPreview.length !== 1 ? "s" : ""} ready to import
+            </Text>
+            <Text style={[styles.importSummaryNote, { color: colors.mutedForeground }]}>
+              Review below, then choose how to handle existing inventory.
+            </Text>
+          </View>
+
+          <View style={[styles.importModeRow, { borderBottomColor: colors.border }]}>
+            {(["append", "replace"] as const).map((mode) => (
+              <TouchableOpacity
+                key={mode}
+                style={[styles.importModeBtn, { borderColor: colors.border }, importMode === mode && { backgroundColor: "#ef4444", borderColor: "#ef4444" }]}
+                onPress={() => setImportMode(mode)}
+              >
+                <Text style={[styles.importModeBtnText, { color: importMode === mode ? "#fff" : colors.foreground }]}>
+                  {mode === "append" ? "➕ Add to existing" : "🔄 Replace all"}
+                </Text>
+                <Text style={[styles.importModeSub, { color: importMode === mode ? "#ffffff99" : colors.mutedForeground }]}>
+                  {mode === "append" ? "Skips duplicates by name" : "Deletes all current items"}
+                </Text>
+              </TouchableOpacity>
+            ))}
+          </View>
+
+          <ScrollView contentContainerStyle={{ paddingBottom: 40 }}>
+            {importPreview.map((item, idx) => (
+              <View key={idx} style={[styles.importPreviewRow, { borderBottomColor: colors.border }]}>
+                <View style={{ flex: 1 }}>
+                  <Text style={[styles.importPreviewName, { color: colors.foreground }]}>{item.name}</Text>
+                  <Text style={[styles.importPreviewMeta, { color: colors.mutedForeground }]}>
+                    {[item.category, item.location].filter(Boolean).join(" · ")}
+                    {item.unit ? ` · ${item.unit}` : ""}
+                    {item.unitsPerCase ? ` · ${item.unitsPerCase}/case` : ""}
+                  </Text>
+                </View>
+                <View style={styles.importPreviewRight}>
+                  {item.currentStock ? (
+                    <Text style={[styles.importPreviewStock, { color: "#ef4444" }]}>
+                      {item.currentStock} {item.unit}
+                    </Text>
+                  ) : null}
+                  {item.parLevel ? (
+                    <Text style={[styles.importPreviewPar, { color: colors.mutedForeground }]}>
+                      par {item.parLevel}
+                    </Text>
+                  ) : null}
+                </View>
+              </View>
+            ))}
+          </ScrollView>
+        </SafeAreaView>
+      </Modal>
 
       {/* ── Inventory Walk Modal ────────────────────────────────────────── */}
       <Modal visible={walkVisible} animationType="slide" presentationStyle="pageSheet">
@@ -645,6 +833,19 @@ const styles = StyleSheet.create({
   walkTotalLabel: { fontSize: 9, fontWeight: "700", letterSpacing: 0.5 },
   walkTotalValue: { fontSize: 18, fontWeight: "800" },
   walkTotalUnit: { fontSize: 10 },
+  importSummary: { margin: 12, borderRadius: 10, borderWidth: 1, padding: 12 },
+  importSummaryTitle: { fontSize: 16, fontWeight: "700" },
+  importSummaryNote: { fontSize: 13, marginTop: 4 },
+  importModeRow: { flexDirection: "row", gap: 10, padding: 12, borderBottomWidth: 1 },
+  importModeBtn: { flex: 1, borderWidth: 1.5, borderRadius: 10, padding: 12 },
+  importModeBtnText: { fontSize: 14, fontWeight: "700" },
+  importModeSub: { fontSize: 12, marginTop: 3 },
+  importPreviewRow: { flexDirection: "row", alignItems: "center", paddingHorizontal: 16, paddingVertical: 12, borderBottomWidth: 1, gap: 12 },
+  importPreviewName: { fontSize: 14, fontWeight: "600" },
+  importPreviewMeta: { fontSize: 12, marginTop: 2 },
+  importPreviewRight: { alignItems: "flex-end", gap: 2 },
+  importPreviewStock: { fontSize: 14, fontWeight: "700" },
+  importPreviewPar: { fontSize: 12 },
   empty: { alignItems: "center", paddingTop: 40 },
   emptyText: { fontSize: 15 },
   card: { borderRadius: 10, borderWidth: 1, padding: 14 },
