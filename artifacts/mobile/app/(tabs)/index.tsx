@@ -108,6 +108,14 @@ const MODES = [
     color: "#16a34a",
     route: "/prep",
   },
+  {
+    id: "notes",
+    title: "Kitchen Notes",
+    description: "Specials, rotation alerts & shift handoffs",
+    icon: "📋",
+    color: "#3b82f6",
+    route: "/notes",
+  },
 ];
 
 export default function DashboardScreen() {
