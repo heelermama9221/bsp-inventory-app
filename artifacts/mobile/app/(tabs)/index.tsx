@@ -84,6 +84,14 @@ const MODES = [
     color: "#0891b2",
     route: "/hours",
   },
+  {
+    id: "schedule",
+    title: "Employee Schedule",
+    description: "Staff roster & weekly shifts",
+    icon: "👥",
+    color: "#059669",
+    route: "/schedule",
+  },
 ];
 
 export default function DashboardScreen() {
