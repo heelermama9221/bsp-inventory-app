@@ -12,6 +12,7 @@ import {
 import { SafeAreaView } from "react-native-safe-area-context";
 import { useColors } from "@/hooks/useColors";
 import { useStorage } from "@/hooks/useStorage";
+import { exportToCsv } from "@/utils/exportCsv";
 
 type WasteEntry = {
   id: string;
@@ -93,9 +94,32 @@ export default function WasteScreen() {
           </Text>
         </View>
 
-        <TouchableOpacity style={[styles.addBtn, { backgroundColor: "#f59e0b" }]} onPress={() => setModalVisible(true)}>
-          <Text style={styles.addBtnText}>+ Log Waste</Text>
-        </TouchableOpacity>
+        <View style={styles.btnRow}>
+          <TouchableOpacity style={[styles.addBtn, { backgroundColor: "#f59e0b", flex: 1 }]} onPress={() => setModalVisible(true)}>
+            <Text style={styles.addBtnText}>+ Log Waste</Text>
+          </TouchableOpacity>
+          <TouchableOpacity
+            style={[styles.exportBtn, { borderColor: "#f59e0b" }]}
+            onPress={() =>
+              exportToCsv(
+                "Waste_Log",
+                entries.map((e) => ({
+                  Date: e.date,
+                  Item: e.item,
+                  Category: e.category,
+                  Quantity: e.quantity,
+                  Unit: e.unit,
+                  "Cost Per Unit ($)": e.costPerUnit,
+                  "Total Cost ($)": ((parseFloat(e.quantity) || 0) * (parseFloat(e.costPerUnit) || 0)).toFixed(2),
+                  Reason: e.reason,
+                  "Recorded By": e.recordedBy,
+                }))
+              )
+            }
+          >
+            <Text style={[styles.exportBtnText, { color: "#f59e0b" }]}>⬆ Export</Text>
+          </TouchableOpacity>
+        </View>
 
         {/* Category Filter */}
         <ScrollView horizontal showsHorizontalScrollIndicator={false} style={styles.filterScroll}>
@@ -218,8 +242,11 @@ const styles = StyleSheet.create({
   summaryLabel: { fontSize: 13 },
   summaryAmount: { fontSize: 32, fontWeight: "700", marginVertical: 4 },
   summaryCount: { fontSize: 13 },
+  btnRow: { flexDirection: "row", gap: 10 },
   addBtn: { borderRadius: 10, padding: 14, alignItems: "center" },
   addBtnText: { color: "#fff", fontWeight: "700", fontSize: 15 },
+  exportBtn: { borderRadius: 10, borderWidth: 1.5, paddingHorizontal: 16, justifyContent: "center", alignItems: "center" },
+  exportBtnText: { fontWeight: "700", fontSize: 14 },
   filterScroll: { marginBottom: 4 },
   filterChip: { borderWidth: 1, borderRadius: 20, paddingHorizontal: 14, paddingVertical: 7, marginRight: 8 },
   filterChipText: { fontSize: 13, fontWeight: "500" },

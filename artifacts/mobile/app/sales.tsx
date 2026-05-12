@@ -12,6 +12,7 @@ import {
 import { SafeAreaView } from "react-native-safe-area-context";
 import { useColors } from "@/hooks/useColors";
 import { useStorage } from "@/hooks/useStorage";
+import { exportToCsv } from "@/utils/exportCsv";
 
 /**
  * CRITICAL RULE:
@@ -136,9 +137,32 @@ export default function SalesScreen() {
           </View>
         )}
 
-        <TouchableOpacity style={[styles.addBtn, { backgroundColor: "#10b981" }]} onPress={() => setModalVisible(true)}>
-          <Text style={styles.addBtnText}>+ Log Sale</Text>
-        </TouchableOpacity>
+        <View style={styles.btnRow}>
+          <TouchableOpacity style={[styles.addBtn, { backgroundColor: "#10b981", flex: 1 }]} onPress={() => setModalVisible(true)}>
+            <Text style={styles.addBtnText}>+ Log Sale</Text>
+          </TouchableOpacity>
+          <TouchableOpacity
+            style={[styles.exportBtn, { borderColor: "#10b981" }]}
+            onPress={() =>
+              exportToCsv(
+                "Kitchen_Sales",
+                entries.map((e) => ({
+                  Date: e.date,
+                  Shift: e.shift,
+                  Category: e.category,
+                  Item: e.item,
+                  Quantity: e.quantity,
+                  "Unit Price ($)": e.unitPrice,
+                  "Line Total ($)": ((parseFloat(e.quantity) || 0) * (parseFloat(e.unitPrice) || 0)).toFixed(2),
+                  "Server / Staff": e.server,
+                  "Alcohol Included": "No — excluded per policy",
+                }))
+              )
+            }
+          >
+            <Text style={[styles.exportBtnText, { color: "#10b981" }]}>⬆ Export</Text>
+          </TouchableOpacity>
+        </View>
 
         {/* Shift Filter */}
         <ScrollView horizontal showsHorizontalScrollIndicator={false} style={styles.filterScroll}>
@@ -260,8 +284,11 @@ const styles = StyleSheet.create({
   breakdownRow: { flexDirection: "row", justifyContent: "space-between", paddingVertical: 4 },
   breakdownLabel: { fontSize: 14 },
   breakdownValue: { fontSize: 14, fontWeight: "600" },
+  btnRow: { flexDirection: "row", gap: 10 },
   addBtn: { borderRadius: 10, padding: 14, alignItems: "center" },
   addBtnText: { color: "#fff", fontWeight: "700", fontSize: 15 },
+  exportBtn: { borderRadius: 10, borderWidth: 1.5, paddingHorizontal: 16, justifyContent: "center", alignItems: "center" },
+  exportBtnText: { fontWeight: "700", fontSize: 14 },
   filterScroll: { marginBottom: 4 },
   filterChip: { borderWidth: 1, borderRadius: 20, paddingHorizontal: 14, paddingVertical: 7, marginRight: 8 },
   filterChipText: { fontSize: 13, fontWeight: "500" },

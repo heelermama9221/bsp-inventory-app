@@ -12,6 +12,7 @@ import {
 import { SafeAreaView } from "react-native-safe-area-context";
 import { useColors } from "@/hooks/useColors";
 import { useStorage } from "@/hooks/useStorage";
+import { exportToCsv } from "@/utils/exportCsv";
 
 type CheckItem = { id: string; label: string; checked: boolean };
 type Walkthrough = {
@@ -96,12 +97,33 @@ export default function WalkthroughsScreen() {
   return (
     <SafeAreaView style={[styles.safe, { backgroundColor: colors.background }]} edges={["bottom"]}>
       <ScrollView contentContainerStyle={styles.content}>
-        <TouchableOpacity
-          style={[styles.addBtn, { backgroundColor: "#3b82f6" }]}
-          onPress={startNew}
-        >
-          <Text style={styles.addBtnText}>+ New Walkthrough</Text>
-        </TouchableOpacity>
+        <View style={styles.btnRow}>
+          <TouchableOpacity
+            style={[styles.addBtn, { backgroundColor: "#3b82f6", flex: 1 }]}
+            onPress={startNew}
+          >
+            <Text style={styles.addBtnText}>+ New Walkthrough</Text>
+          </TouchableOpacity>
+          <TouchableOpacity
+            style={[styles.exportBtn, { borderColor: "#3b82f6" }]}
+            onPress={() =>
+              exportToCsv(
+                "Walkthroughs",
+                walkthroughs.map((w) => ({
+                  Date: w.date,
+                  Shift: w.shift,
+                  "Conducted By": w.conductedBy,
+                  "Completion %": `${Math.round((w.items.filter((i) => i.checked).length / w.items.length) * 100)}%`,
+                  "Items Checked": w.items.filter((i) => i.checked).length,
+                  "Total Items": w.items.length,
+                  Notes: w.notes,
+                }))
+              )
+            }
+          >
+            <Text style={[styles.exportBtnText, { color: "#3b82f6" }]}>⬆ Export</Text>
+          </TouchableOpacity>
+        </View>
 
         {walkthroughs.length === 0 && (
           <View style={styles.empty}>
@@ -278,8 +300,11 @@ export default function WalkthroughsScreen() {
 const styles = StyleSheet.create({
   safe: { flex: 1 },
   content: { padding: 16, gap: 12 },
+  btnRow: { flexDirection: "row", gap: 10 },
   addBtn: { borderRadius: 10, padding: 14, alignItems: "center" },
   addBtnText: { color: "#fff", fontWeight: "700", fontSize: 15 },
+  exportBtn: { borderRadius: 10, borderWidth: 1.5, paddingHorizontal: 16, justifyContent: "center", alignItems: "center" },
+  exportBtnText: { fontWeight: "700", fontSize: 14 },
   empty: { alignItems: "center", paddingTop: 40 },
   emptyText: { fontSize: 15, textAlign: "center" },
   card: { borderRadius: 10, borderWidth: 1, padding: 14 },

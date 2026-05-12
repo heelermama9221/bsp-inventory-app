@@ -12,6 +12,7 @@ import {
 import { SafeAreaView } from "react-native-safe-area-context";
 import { useColors } from "@/hooks/useColors";
 import { useStorage } from "@/hooks/useStorage";
+import { exportToCsv } from "@/utils/exportCsv";
 
 /**
  * Ordering includes ALL categories including Bar & Service (alcohol, spirits, wine, beer).
@@ -158,9 +159,36 @@ export default function OrderingScreen() {
           })}
         </View>
 
-        <TouchableOpacity style={[styles.addBtn, { backgroundColor: "#f97316" }]} onPress={() => setOrderModalVisible(true)}>
-          <Text style={styles.addBtnText}>+ New Order</Text>
-        </TouchableOpacity>
+        <View style={styles.btnRow}>
+          <TouchableOpacity style={[styles.addBtn, { backgroundColor: "#f97316", flex: 1 }]} onPress={() => setOrderModalVisible(true)}>
+            <Text style={styles.addBtnText}>+ New Order</Text>
+          </TouchableOpacity>
+          <TouchableOpacity
+            style={[styles.exportBtn, { borderColor: "#f97316" }]}
+            onPress={() =>
+              exportToCsv(
+                "Orders",
+                orders.flatMap((o) =>
+                  o.items.map((item) => ({
+                    "Order Date": o.date,
+                    Distributor: o.distributor,
+                    Status: o.status,
+                    "Order Notes": o.notes,
+                    Item: item.item,
+                    Category: item.category,
+                    Quantity: item.quantity,
+                    Unit: item.unit,
+                    "Est. Cost Per Unit ($)": item.estimatedCost,
+                    "Est. Line Total ($)": ((parseFloat(item.quantity) || 0) * (parseFloat(item.estimatedCost) || 0)).toFixed(2),
+                    "Item Notes": item.notes,
+                  }))
+                )
+              )
+            }
+          >
+            <Text style={[styles.exportBtnText, { color: "#f97316" }]}>⬆ Export</Text>
+          </TouchableOpacity>
+        </View>
 
         {/* Category filter */}
         <ScrollView horizontal showsHorizontalScrollIndicator={false} style={styles.filterScroll}>
@@ -376,8 +404,11 @@ const styles = StyleSheet.create({
   statCard: { flex: 1, borderRadius: 10, borderWidth: 1, padding: 12, alignItems: "center" },
   statCount: { fontSize: 24, fontWeight: "700" },
   statLabel: { fontSize: 12, marginTop: 2 },
+  btnRow: { flexDirection: "row", gap: 10 },
   addBtn: { borderRadius: 10, padding: 14, alignItems: "center" },
   addBtnText: { color: "#fff", fontWeight: "700", fontSize: 15 },
+  exportBtn: { borderRadius: 10, borderWidth: 1.5, paddingHorizontal: 16, justifyContent: "center", alignItems: "center" },
+  exportBtnText: { fontWeight: "700", fontSize: 14 },
   filterScroll: { marginBottom: 4 },
   filterChip: { borderWidth: 1, borderRadius: 20, paddingHorizontal: 14, paddingVertical: 7, marginRight: 8 },
   filterChipText: { fontSize: 13, fontWeight: "500" },

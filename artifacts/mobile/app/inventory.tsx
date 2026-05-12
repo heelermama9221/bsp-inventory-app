@@ -12,6 +12,7 @@ import {
 import { SafeAreaView } from "react-native-safe-area-context";
 import { useColors } from "@/hooks/useColors";
 import { useStorage } from "@/hooks/useStorage";
+import { exportToCsv } from "@/utils/exportCsv";
 
 // Bar & Service categories included here for ordering reference.
 // Alcohol sales are excluded from kitchen sales reports (see sales.tsx).
@@ -165,9 +166,32 @@ export default function InventoryScreen() {
           ))}
         </ScrollView>
 
-        <TouchableOpacity style={[styles.addBtn, { backgroundColor: "#ef4444" }]} onPress={() => setModalVisible(true)}>
-          <Text style={styles.addBtnText}>+ Add Item</Text>
-        </TouchableOpacity>
+        <View style={styles.btnRow}>
+          <TouchableOpacity style={[styles.addBtn, { backgroundColor: "#ef4444", flex: 1 }]} onPress={() => setModalVisible(true)}>
+            <Text style={styles.addBtnText}>+ Add Item</Text>
+          </TouchableOpacity>
+          <TouchableOpacity
+            style={[styles.exportBtn, { borderColor: "#ef4444" }]}
+            onPress={() =>
+              exportToCsv(
+                "Inventory",
+                items.map((i) => ({
+                  Name: i.name,
+                  Category: i.category,
+                  "Current Stock": i.currentStock,
+                  "Par Level": i.parLevel,
+                  Unit: i.unit,
+                  Location: i.location,
+                  "Cost Per Unit ($)": i.cost,
+                  Status: STATUS_LABEL[stockStatus(i)],
+                  "Last Counted": i.lastCounted,
+                }))
+              )
+            }
+          >
+            <Text style={[styles.exportBtnText, { color: "#ef4444" }]}>⬆ Export</Text>
+          </TouchableOpacity>
+        </View>
 
         {filtered.length === 0 && (
           <View style={styles.empty}>
@@ -282,8 +306,11 @@ const styles = StyleSheet.create({
   filterScroll: { marginBottom: 4 },
   filterChip: { borderWidth: 1, borderRadius: 20, paddingHorizontal: 14, paddingVertical: 7, marginRight: 8 },
   filterChipText: { fontSize: 13, fontWeight: "500" },
+  btnRow: { flexDirection: "row", gap: 10 },
   addBtn: { borderRadius: 10, padding: 14, alignItems: "center" },
   addBtnText: { color: "#fff", fontWeight: "700", fontSize: 15 },
+  exportBtn: { borderRadius: 10, borderWidth: 1.5, paddingHorizontal: 16, justifyContent: "center", alignItems: "center" },
+  exportBtnText: { fontWeight: "700", fontSize: 14 },
   empty: { alignItems: "center", paddingTop: 40 },
   emptyText: { fontSize: 15 },
   card: { borderRadius: 10, borderWidth: 1, padding: 14 },

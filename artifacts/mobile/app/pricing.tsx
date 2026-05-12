@@ -12,6 +12,7 @@ import {
 import { SafeAreaView } from "react-native-safe-area-context";
 import { useColors } from "@/hooks/useColors";
 import { useStorage } from "@/hooks/useStorage";
+import { exportToCsv } from "@/utils/exportCsv";
 
 type PriceEntry = {
   id: string;
@@ -124,9 +125,38 @@ export default function PricingScreen() {
           ))}
         </ScrollView>
 
-        <TouchableOpacity style={[styles.addBtn, { backgroundColor: "#8b5cf6" }]} onPress={() => setModalVisible(true)}>
-          <Text style={styles.addBtnText}>+ Add Item</Text>
-        </TouchableOpacity>
+        <View style={styles.btnRow}>
+          <TouchableOpacity style={[styles.addBtn, { backgroundColor: "#8b5cf6", flex: 1 }]} onPress={() => setModalVisible(true)}>
+            <Text style={styles.addBtnText}>+ Add Item</Text>
+          </TouchableOpacity>
+          <TouchableOpacity
+            style={[styles.exportBtn, { borderColor: "#8b5cf6" }]}
+            onPress={() =>
+              exportToCsv(
+                "Distributor_Pricing",
+                items.map((p) => {
+                  const change = p.previousPrice && p.currentPrice
+                    ? (parseFloat(p.currentPrice) - parseFloat(p.previousPrice)).toFixed(2)
+                    : "";
+                  return {
+                    Item: p.item,
+                    Distributor: p.distributor,
+                    Category: p.category,
+                    "Current Price ($)": p.currentPrice,
+                    "Previous Price ($)": p.previousPrice,
+                    "Price Change ($)": change,
+                    Unit: p.unit,
+                    "SKU / Item #": p.sku,
+                    "Last Updated": p.lastUpdated,
+                    Notes: p.notes,
+                  };
+                })
+              )
+            }
+          >
+            <Text style={[styles.exportBtnText, { color: "#8b5cf6" }]}>⬆ Export</Text>
+          </TouchableOpacity>
+        </View>
 
         {filtered.length === 0 && (
           <View style={styles.empty}>
@@ -239,8 +269,11 @@ const styles = StyleSheet.create({
   filterScroll: { marginBottom: 4 },
   filterChip: { borderWidth: 1, borderRadius: 20, paddingHorizontal: 14, paddingVertical: 7, marginRight: 8 },
   filterChipText: { fontSize: 13, fontWeight: "500" },
+  btnRow: { flexDirection: "row", gap: 10 },
   addBtn: { borderRadius: 10, padding: 14, alignItems: "center" },
   addBtnText: { color: "#fff", fontWeight: "700", fontSize: 15 },
+  exportBtn: { borderRadius: 10, borderWidth: 1.5, paddingHorizontal: 16, justifyContent: "center", alignItems: "center" },
+  exportBtnText: { fontWeight: "700", fontSize: 14 },
   empty: { alignItems: "center", paddingTop: 40 },
   emptyText: { fontSize: 15 },
   card: { borderRadius: 10, borderWidth: 1, padding: 14 },
