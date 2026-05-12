@@ -58,7 +58,7 @@ export default function PrepScreen() {
   const [recipes, setRecipes, loaded] = useStorage<Recipe[]>("recipes", []);
   const [inventory] = useStorage<InventoryRef[]>("inventory_items", []);
 
-  const [tab, setTab] = useState<"recipes" | "batch">("recipes");
+  const [tab, setTab] = useState<"recipes" | "batch" | "plan">("recipes");
   const [filterCat, setFilterCat] = useState("All");
   const [search, setSearch] = useState("");
 
@@ -80,6 +80,10 @@ export default function PrepScreen() {
   // Batch calc
   const [batchRecipeId, setBatchRecipeId] = useState<string | null>(null);
   const [batchMultiplier, setBatchMultiplier] = useState("1");
+
+  // Daily Prep Plan
+  const [planBatches, setPlanBatches] = useStorage<Record<string, string>>("daily_prep_batches", {});
+  const [planChecked, setPlanChecked] = useStorage<Record<string, boolean>>("daily_prep_checked", {});
 
   if (!loaded) return null;
 
@@ -173,6 +177,53 @@ export default function PrepScreen() {
   const overallMax = linkedCalcs.length > 0 ? Math.min(...linkedCalcs.map((c) => c.maxBatches!)) : null;
   const limitingIng = linkedCalcs.find((c) => c.maxBatches === overallMax);
 
+  // ── Daily Prep Plan logic ─────────────────────────────────────────────
+
+  function planFeasible(recipe: Recipe, batches: number): "ok" | "short" | "unknown" {
+    if (recipe.ingredients.length === 0) return "unknown";
+    let anyLinked = false;
+    for (const ing of recipe.ingredients) {
+      const inv = inventory.find((i) => i.name.toLowerCase() === ing.name.toLowerCase());
+      if (!inv) continue;
+      anyLinked = true;
+      const needed = (parseFloat(ing.quantity) || 0) * batches;
+      const onHand = parseFloat(inv.currentStock) || 0;
+      if (needed > onHand) return "short";
+    }
+    return anyLinked ? "ok" : "unknown";
+  }
+
+  const plannedRecipes = recipes.filter((r) => (parseFloat(planBatches[r.id]) || 0) > 0);
+
+  // Aggregate ingredient pull list across all planned recipes
+  type PullItem = { name: string; totalNeeded: number; unit: string; onHand: number | null };
+  const pullMap: Record<string, PullItem> = {};
+  for (const recipe of plannedRecipes) {
+    const batches = parseFloat(planBatches[recipe.id]) || 0;
+    for (const ing of recipe.ingredients) {
+      const key = ing.name.toLowerCase();
+      const needed = (parseFloat(ing.quantity) || 0) * batches;
+      if (!pullMap[key]) {
+        const inv = inventory.find((i) => i.name.toLowerCase() === key);
+        pullMap[key] = {
+          name: ing.name, totalNeeded: 0, unit: ing.unit,
+          onHand: inv ? (parseFloat(inv.currentStock) || 0) : null,
+        };
+      }
+      pullMap[key].totalNeeded += needed;
+    }
+  }
+  const pullItems = Object.values(pullMap).sort((a, b) => a.name.localeCompare(b.name));
+
+  const checkedCount = plannedRecipes.filter((r) => planChecked[r.id]).length;
+
+  function clearPlan() {
+    Alert.alert("Clear Plan", "Reset today's prep plan?", [
+      { text: "Cancel", style: "cancel" },
+      { text: "Clear", style: "destructive", onPress: () => { setPlanBatches({}); setPlanChecked({}); } },
+    ]);
+  }
+
   function exportRecipes() {
     const rows = recipes.flatMap((r) =>
       r.ingredients.length > 0
@@ -193,10 +244,10 @@ export default function PrepScreen() {
     <SafeAreaView style={[styles.safe, { backgroundColor: colors.background }]} edges={["bottom"]}>
       {/* Tab bar */}
       <View style={[styles.tabBar, { borderBottomColor: colors.border }]}>
-        {(["recipes", "batch"] as const).map((t) => (
+        {(["recipes", "batch", "plan"] as const).map((t) => (
           <TouchableOpacity key={t} style={[styles.tabBtn, tab === t && { borderBottomColor: "#16a34a", borderBottomWidth: 2.5 }]} onPress={() => setTab(t)}>
             <Text style={[styles.tabText, { color: tab === t ? "#16a34a" : colors.mutedForeground }]}>
-              {t === "recipes" ? "📖 Recipe Book" : "⚖ Batch Calculator"}
+              {t === "recipes" ? "📖 Recipes" : t === "batch" ? "⚖ Batch" : "📋 Daily Plan"}
             </Text>
           </TouchableOpacity>
         ))}
@@ -410,6 +461,203 @@ export default function PrepScreen() {
                 })
               )}
             </>
+          )}
+
+          <View style={{ height: 60 }} />
+        </ScrollView>
+      )}
+
+      {/* ── DAILY PREP PLAN TAB ──────────────────────────────────────────── */}
+      {tab === "plan" && (
+        <ScrollView contentContainerStyle={styles.content}>
+
+          {/* Header bar */}
+          <View style={styles.planHeader}>
+            <View>
+              <Text style={[styles.planTitle, { color: colors.foreground }]}>Today's Prep Plan</Text>
+              {plannedRecipes.length > 0 && (
+                <Text style={[styles.planSub, { color: colors.mutedForeground }]}>
+                  {plannedRecipes.length} recipe{plannedRecipes.length !== 1 ? "s" : ""} · {checkedCount}/{plannedRecipes.length} complete
+                </Text>
+              )}
+            </View>
+            {plannedRecipes.length > 0 && (
+              <TouchableOpacity style={[styles.clearBtn, { borderColor: colors.border }]} onPress={clearPlan}>
+                <Text style={[styles.clearBtnText, { color: colors.mutedForeground }]}>Clear</Text>
+              </TouchableOpacity>
+            )}
+          </View>
+
+          {/* Progress bar */}
+          {plannedRecipes.length > 0 && (
+            <View style={[styles.planProgress, { backgroundColor: colors.card, borderColor: colors.border }]}>
+              <View style={styles.planProgressRow}>
+                <Text style={[styles.planProgressLabel, { color: colors.mutedForeground }]}>
+                  {checkedCount === plannedRecipes.length ? "All prep complete!" : `${checkedCount} of ${plannedRecipes.length} done`}
+                </Text>
+                <Text style={[styles.planProgressPct, { color: "#16a34a" }]}>
+                  {Math.round((checkedCount / plannedRecipes.length) * 100)}%
+                </Text>
+              </View>
+              <View style={[styles.planProgressTrack, { backgroundColor: colors.border }]}>
+                <View style={[styles.planProgressFill, { backgroundColor: "#16a34a", width: `${(checkedCount / plannedRecipes.length) * 100}%` as any }]} />
+              </View>
+            </View>
+          )}
+
+          {/* ── Set batch counts ── */}
+          <Text style={[styles.sectionLabel, { color: colors.mutedForeground }]}>SET REQUIRED BATCHES</Text>
+
+          {recipes.length === 0 ? (
+            <View style={[styles.emptyCard, { backgroundColor: colors.card, borderColor: colors.border }]}>
+              <Text style={[styles.emptyText, { color: colors.mutedForeground, textAlign: "center" }]}>
+                No recipes yet. Add recipes in the Recipes tab first.
+              </Text>
+            </View>
+          ) : (
+            recipes.map((recipe) => {
+              const batches = parseFloat(planBatches[recipe.id]) || 0;
+              const feasibility = batches > 0 ? planFeasible(recipe, batches) : null;
+              const catColor = CAT_COLORS[recipe.category] ?? "#6b7280";
+              const feasIcon = feasibility === "ok" ? "✓" : feasibility === "short" ? "✕" : "?";
+              const feasColor = feasibility === "ok" ? "#16a34a" : feasibility === "short" ? "#ef4444" : "#f59e0b";
+              return (
+                <View
+                  key={recipe.id}
+                  style={[
+                    styles.planRow,
+                    { backgroundColor: colors.card, borderColor: colors.border },
+                    batches > 0 && { borderLeftColor: feasColor, borderLeftWidth: 3 },
+                  ]}
+                >
+                  <View style={{ flex: 1 }}>
+                    <Text style={[styles.planRecipeName, { color: colors.foreground }]}>{recipe.name}</Text>
+                    <View style={styles.planRecipeMeta}>
+                      <View style={[styles.planCatDot, { backgroundColor: catColor + "25" }]}>
+                        <Text style={[styles.planCatDotText, { color: catColor }]}>{recipe.category}</Text>
+                      </View>
+                      {recipe.yieldQty && batches > 0 && (
+                        <Text style={[styles.planYieldText, { color: colors.mutedForeground }]}>
+                          → {(parseFloat(recipe.yieldQty) * batches).toFixed(1)} {recipe.yieldUnit} total
+                        </Text>
+                      )}
+                    </View>
+                    {feasibility === "short" && batches > 0 && (
+                      <Text style={[styles.planWarnText, { color: "#ef4444" }]}>
+                        ⚠ Inventory may be short for {batches} batch{batches !== 1 ? "es" : ""}
+                      </Text>
+                    )}
+                  </View>
+                  <View style={styles.planStepper}>
+                    {batches > 0 && (
+                      <View style={[styles.planFeasIcon, { backgroundColor: feasColor + "20" }]}>
+                        <Text style={[styles.planFeasIconText, { color: feasColor }]}>{feasIcon}</Text>
+                      </View>
+                    )}
+                    <TouchableOpacity
+                      style={[styles.planStepBtn, { backgroundColor: colors.background, borderColor: colors.border }]}
+                      onPress={() => setPlanBatches((prev) => ({ ...prev, [recipe.id]: String(Math.max(0, batches - 1)) }))}
+                    >
+                      <Text style={[styles.planStepBtnText, { color: colors.foreground }]}>−</Text>
+                    </TouchableOpacity>
+                    <View style={[styles.planBatchBox, { borderColor: batches > 0 ? "#16a34a" : colors.border, backgroundColor: batches > 0 ? "#16a34a10" : colors.background }]}>
+                      <Text style={[styles.planBatchNum, { color: batches > 0 ? "#16a34a" : colors.mutedForeground }]}>{batches}</Text>
+                    </View>
+                    <TouchableOpacity
+                      style={[styles.planStepBtn, { backgroundColor: "#16a34a", borderColor: "#16a34a" }]}
+                      onPress={() => setPlanBatches((prev) => ({ ...prev, [recipe.id]: String(batches + 1) }))}
+                    >
+                      <Text style={[styles.planStepBtnText, { color: "#fff" }]}>+</Text>
+                    </TouchableOpacity>
+                  </View>
+                </View>
+              );
+            })
+          )}
+
+          {/* ── Ingredient pull list ── */}
+          {pullItems.length > 0 && (
+            <>
+              <Text style={[styles.sectionLabel, { color: colors.mutedForeground, marginTop: 8 }]}>INGREDIENT PULL LIST</Text>
+              <View style={[styles.pullCard, { backgroundColor: colors.card, borderColor: colors.border }]}>
+                {pullItems.map((item, idx) => {
+                  const isShort = item.onHand !== null && item.onHand < item.totalNeeded;
+                  return (
+                    <View
+                      key={item.name}
+                      style={[
+                        styles.pullRow,
+                        { borderTopColor: colors.border },
+                        idx === 0 && { borderTopWidth: 0 },
+                      ]}
+                    >
+                      <View style={{ flex: 1 }}>
+                        <Text style={[styles.pullName, { color: colors.foreground }]}>{item.name}</Text>
+                        {item.onHand !== null && (
+                          <Text style={[styles.pullMeta, { color: isShort ? "#ef4444" : colors.mutedForeground }]}>
+                            {isShort ? "⚠ " : ""}On hand: {item.onHand} {item.unit}
+                            {isShort ? ` — short ${(item.totalNeeded - item.onHand).toFixed(1)} ${item.unit}` : ""}
+                          </Text>
+                        )}
+                      </View>
+                      <View style={[styles.pullQty, { backgroundColor: isShort ? "#ef444415" : "#16a34a15", borderColor: isShort ? "#ef4444" : "#16a34a" }]}>
+                        <Text style={[styles.pullQtyNum, { color: isShort ? "#ef4444" : "#16a34a" }]}>
+                          {item.totalNeeded % 1 === 0 ? item.totalNeeded : item.totalNeeded.toFixed(1)}
+                        </Text>
+                        <Text style={[styles.pullQtyUnit, { color: isShort ? "#ef4444" : "#16a34a" }]}>{item.unit}</Text>
+                      </View>
+                    </View>
+                  );
+                })}
+              </View>
+            </>
+          )}
+
+          {/* ── Completion checklist ── */}
+          {plannedRecipes.length > 0 && (
+            <>
+              <Text style={[styles.sectionLabel, { color: colors.mutedForeground, marginTop: 8 }]}>COMPLETION CHECKLIST</Text>
+              {plannedRecipes.map((recipe) => {
+                const done = !!planChecked[recipe.id];
+                const batches = parseFloat(planBatches[recipe.id]) || 0;
+                const catColor = CAT_COLORS[recipe.category] ?? "#6b7280";
+                return (
+                  <TouchableOpacity
+                    key={recipe.id}
+                    style={[
+                      styles.checkRow,
+                      { backgroundColor: colors.card, borderColor: done ? "#16a34a40" : colors.border },
+                      done && { backgroundColor: "#16a34a08" },
+                    ]}
+                    onPress={() => setPlanChecked((prev) => ({ ...prev, [recipe.id]: !prev[recipe.id] }))}
+                  >
+                    <View style={[styles.checkbox, { borderColor: done ? "#16a34a" : colors.border, backgroundColor: done ? "#16a34a" : "transparent" }]}>
+                      {done && <Text style={styles.checkboxTick}>✓</Text>}
+                    </View>
+                    <View style={{ flex: 1 }}>
+                      <Text style={[styles.checkName, { color: done ? colors.mutedForeground : colors.foreground, textDecorationLine: done ? "line-through" : "none" }]}>
+                        {recipe.name}
+                      </Text>
+                      <Text style={[styles.checkMeta, { color: colors.mutedForeground }]}>
+                        {batches} batch{batches !== 1 ? "es" : ""}
+                        {recipe.yieldQty ? ` · ${(parseFloat(recipe.yieldQty) * batches).toFixed(1)} ${recipe.yieldUnit}` : ""}
+                      </Text>
+                    </View>
+                    <View style={[styles.planCatDot, { backgroundColor: catColor + "25" }]}>
+                      <Text style={[styles.planCatDotText, { color: catColor }]}>{recipe.category}</Text>
+                    </View>
+                  </TouchableOpacity>
+                );
+              })}
+            </>
+          )}
+
+          {plannedRecipes.length === 0 && recipes.length > 0 && (
+            <View style={[styles.emptyCard, { backgroundColor: colors.card, borderColor: colors.border, marginTop: 8 }]}>
+              <Text style={[styles.emptyText, { color: colors.mutedForeground, textAlign: "center" }]}>
+                Use the + buttons above to set how many batches of each recipe you need today. The pull list and checklist will appear here.
+              </Text>
+            </View>
           )}
 
           <View style={{ height: 60 }} />
@@ -826,4 +1074,42 @@ const styles = StyleSheet.create({
   detailIngRow: { borderRadius: 10, borderWidth: 1, padding: 12, flexDirection: "row", alignItems: "center", gap: 12, marginBottom: 8 },
   batchBtn: { borderRadius: 10, padding: 14, alignItems: "center", marginTop: 16 },
   batchBtnText: { color: "#fff", fontWeight: "700", fontSize: 15 },
+  // Daily Prep Plan
+  planHeader: { flexDirection: "row", alignItems: "flex-start", justifyContent: "space-between" },
+  planTitle: { fontSize: 18, fontWeight: "700" },
+  planSub: { fontSize: 13, marginTop: 2 },
+  clearBtn: { borderWidth: 1, borderRadius: 8, paddingHorizontal: 12, paddingVertical: 6 },
+  clearBtnText: { fontSize: 13, fontWeight: "600" },
+  planProgress: { borderRadius: 10, borderWidth: 1, padding: 12 },
+  planProgressRow: { flexDirection: "row", justifyContent: "space-between", marginBottom: 6 },
+  planProgressLabel: { fontSize: 13 },
+  planProgressPct: { fontSize: 13, fontWeight: "700" },
+  planProgressTrack: { height: 6, borderRadius: 3, overflow: "hidden" },
+  planProgressFill: { height: 6, borderRadius: 3 },
+  planRow: { borderRadius: 12, borderWidth: 1, padding: 14, flexDirection: "row", alignItems: "center", gap: 12 },
+  planRecipeName: { fontSize: 15, fontWeight: "600" },
+  planRecipeMeta: { flexDirection: "row", alignItems: "center", gap: 8, marginTop: 4, flexWrap: "wrap" },
+  planCatDot: { borderRadius: 6, paddingHorizontal: 8, paddingVertical: 3 },
+  planCatDotText: { fontSize: 11, fontWeight: "700" },
+  planYieldText: { fontSize: 12 },
+  planWarnText: { fontSize: 12, marginTop: 4 },
+  planStepper: { flexDirection: "row", alignItems: "center", gap: 6 },
+  planFeasIcon: { width: 28, height: 28, borderRadius: 14, justifyContent: "center", alignItems: "center" },
+  planFeasIconText: { fontSize: 14, fontWeight: "700" },
+  planStepBtn: { width: 34, height: 34, borderRadius: 8, borderWidth: 1, justifyContent: "center", alignItems: "center" },
+  planStepBtnText: { fontSize: 20, fontWeight: "700", lineHeight: 24 },
+  planBatchBox: { width: 40, height: 34, borderRadius: 8, borderWidth: 1.5, justifyContent: "center", alignItems: "center" },
+  planBatchNum: { fontSize: 16, fontWeight: "800" },
+  pullCard: { borderRadius: 12, borderWidth: 1, overflow: "hidden" },
+  pullRow: { flexDirection: "row", alignItems: "center", paddingHorizontal: 14, paddingVertical: 12, borderTopWidth: 1, gap: 12 },
+  pullName: { fontSize: 14, fontWeight: "600" },
+  pullMeta: { fontSize: 12, marginTop: 2 },
+  pullQty: { borderWidth: 1.5, borderRadius: 8, minWidth: 56, padding: 7, alignItems: "center" },
+  pullQtyNum: { fontSize: 17, fontWeight: "800" },
+  pullQtyUnit: { fontSize: 10, fontWeight: "600" },
+  checkRow: { borderRadius: 12, borderWidth: 1, padding: 14, flexDirection: "row", alignItems: "center", gap: 12 },
+  checkbox: { width: 26, height: 26, borderRadius: 6, borderWidth: 2, justifyContent: "center", alignItems: "center" },
+  checkboxTick: { color: "#fff", fontSize: 14, fontWeight: "800" },
+  checkName: { fontSize: 15, fontWeight: "600" },
+  checkMeta: { fontSize: 12, marginTop: 2 },
 });
