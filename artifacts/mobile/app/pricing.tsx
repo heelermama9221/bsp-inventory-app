@@ -282,7 +282,14 @@ export default function PricingScreen() {
             <TextInput style={[styles.input, { borderColor: colors.border, color: colors.foreground, backgroundColor: colors.card }]} placeholder="e.g. Chicken Breast" placeholderTextColor={colors.mutedForeground} value={form.item} onChangeText={(v) => setForm((f) => ({ ...f, item: v }))} />
 
             <Text style={[styles.label, { color: colors.mutedForeground }]}>DISTRIBUTOR</Text>
-            <TextInput style={[styles.input, { borderColor: colors.border, color: colors.foreground, backgroundColor: colors.card }]} placeholder="e.g. US Foods, Sysco" placeholderTextColor={colors.mutedForeground} value={form.distributor} onChangeText={(v) => setForm((f) => ({ ...f, distributor: v }))} />
+            <View style={styles.chipGroup}>
+              {["Performance", "US Foods", "Retail Store"].map((d) => (
+                <TouchableOpacity key={d} style={[styles.chip, { borderColor: colors.border }, form.distributor === d && { backgroundColor: "#8b5cf6", borderColor: "#8b5cf6" }]} onPress={() => setForm((f) => ({ ...f, distributor: d }))}>
+                  <Text style={[styles.chipText, { color: form.distributor === d ? "#fff" : colors.foreground }]}>{d}</Text>
+                </TouchableOpacity>
+              ))}
+            </View>
+            <TextInput style={[styles.input, { borderColor: colors.border, color: colors.foreground, backgroundColor: colors.card, marginTop: 8 }]} placeholder="Or type a custom distributor…" placeholderTextColor={colors.mutedForeground} value={form.distributor} onChangeText={(v) => setForm((f) => ({ ...f, distributor: v }))} />
 
             <Text style={[styles.label, { color: colors.mutedForeground }]}>CATEGORY</Text>
             <View style={styles.chipGroup}>

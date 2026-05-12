@@ -25,7 +25,7 @@ const CATEGORIES = [
   "Service Supplies", "Packaging", "Cleaning", "Other",
 ];
 
-const DISTRIBUTORS = ["US Foods", "Sysco", "Gordon Food Service", "Restaurant Depot", "Local Vendor", "Other"];
+const DISTRIBUTORS = ["Performance", "US Foods", "Retail Store"];
 const UNITS = ["case", "each", "lb", "oz", "gallon", "bottle", "keg", "bag", "box"];
 
 type OrderItem = {
@@ -75,7 +75,7 @@ export default function OrderingScreen() {
   const [catalogSearch, setCatalogSearch] = useState("");
   const [showCatalog, setShowCatalog] = useState(true);
 
-  const [orderForm, setOrderForm] = useState({ distributor: "US Foods", notes: "" });
+  const [orderForm, setOrderForm] = useState({ distributor: "Performance", notes: "" });
   const [itemForm, setItemForm] = useState(BLANK_ITEM_FORM);
   const [draftItems, setDraftItems] = useState<OrderItem[]>([]);
 
