@@ -963,6 +963,7 @@ function PrepHub({ prepItems, inventory, onUpdate, onAdd }) {
                               </div>
                             )
                           }
+                        }
 
                           const CostingTool = ({ inventory }) => {
                             const [ingredients, setIngredients] = useState([]);
